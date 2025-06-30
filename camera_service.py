@@ -264,7 +264,7 @@ class RTSPCamera:
             return {"status": "error", "error": str(e)}
 
 
-# Global camera instances
+# Global camera
 cameras = {
     1: RTSPCamera("rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/101"),
     2: RTSPCamera("rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/201"),
