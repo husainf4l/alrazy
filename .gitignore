@@ -1,0 +1,40 @@
+# .gitignore for Al Razy FastAPI project
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.env
+.env.*
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.egg-info/
+*.bak
+*.swp
+# VSCode settings
+.vscode/
+# Python virtual environments
+venv/
+ENV/
+.env/
+.venv/
+# OS generated files
+Thumbs.db
+Desktop.ini
+# Recordings and media
+recordings/
+*.mp4
+*.avi
+*.mov
+*.mkv
+# Static build artifacts
+static/*.tmp
+static/*.cache
+# Uvicorn/PM2 logs
+logs/
+pm2.log
+# Jupyter Notebooks
+*.ipynb_checkpoints/
