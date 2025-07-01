@@ -35,6 +35,9 @@
       "2": "/Streaming/Channels/201", 
       "3": "/Streaming/Channels/301",
       "4": "/Streaming/Channels/401"
+    },
+    "external_cameras": {
+      "5": "rtsp://91.240.87.6:554/user=admin&password=&channel=1&stream=0.sdp"
     }
   }
 }

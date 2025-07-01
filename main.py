@@ -8,6 +8,7 @@ import asyncio
 import os
 import time
 import time
+import concurrent.futures
 from camera_service import (
     initialize_camera, 
     get_camera_frame, 
@@ -70,24 +71,38 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.on_event("startup")
 async def startup_event():
     """Initialize all cameras and security system when the app starts."""
-    # Initialize cameras
-    results = initialize_all_cameras()
-    print("Camera initialization results:")
-    for camera_id, status in results.items():
-        print(f"  Camera {camera_id}: {status}")
+    print("🚀 Starting security monitoring application...")
     
-    # Initialize security system
+    # Skip camera initialization but set up for manual initialization later
+    print("📷 Skipping automatic camera initialization...")
+    print("   Cameras will be initialized on-demand when accessed")
+    print("   Use /cameras/initialize endpoint to manually initialize cameras")
+    
+    # Initialize security system with graceful fallback
     try:
         config = load_config()
-        print(f"Loaded configuration with LLM enabled: {config['llm_config'].get('enabled', False)}")
+        print(f"⚙️  Loaded configuration with LLM enabled: {config['llm_config'].get('enabled', False)}")
         
-        security_system = initialize_security_system(config)
-        await security_system.initialize()
-        security_system.start()
-        print("🔒 Advanced Security System initialized and started")
+        # Try to initialize security system but don't fail if it doesn't work
+        try:
+            security_system = initialize_security_system(config)
+            await security_system.initialize()
+            security_system.start()
+            print("🔒 Advanced Security System initialized and started")
+        except Exception as e:
+            print(f"⚠️  Warning: Advanced security system initialization failed: {e}")
+            print("   Application will run in basic mode without advanced features")
+            
     except Exception as e:
-        print(f"Warning: Security system initialization failed: {e}")
-        print("Basic motion detection will still work")
+        print(f"⚠️  Warning: Configuration loading failed: {e}")
+        print("   Application will run with default settings")
+    
+    print("✅ Application startup completed - Server is ready!")
+    print("📋 Available endpoints:")
+    print("   - Main dashboard: http://localhost:8000")
+    print("   - Security dashboard: http://localhost:8000/security-dashboard")
+    print("   - Multi-camera view: http://localhost:8000/multi-camera")
+    print("   - Initialize cameras: POST http://localhost:8000/cameras/initialize")
 
 # Cleanup cameras on shutdown
 @app.on_event("shutdown")
@@ -128,10 +143,15 @@ async def root() -> Dict[str, Any]:
             system_info["cameras"] = {
                 "total_cameras": len(available_cameras),
                 "available_cameras": available_cameras,
-                "status": "operational"
+                "status": "operational" if available_cameras else "no_cameras"
             }
         except Exception as e:
-            system_info["cameras"] = {"error": str(e), "status": "error"}
+            system_info["cameras"] = {
+                "total_cameras": 0,
+                "available_cameras": [],
+                "status": "unavailable", 
+                "message": "Cameras not initialized. Use /cameras/initialize to connect."
+            }
         
         # Get security system status
         try:
@@ -168,7 +188,8 @@ async def root() -> Dict[str, Any]:
             "security_status": "/security/status",
             "risk_assessment": "/security/risk-assessment",
             "recordings": "/recordings/active",
-            "webhooks": "/webhooks/status"
+            "webhooks": "/webhooks/status",
+            "test_external_camera": "/camera/test-external"
         }
         
         return system_info
@@ -217,21 +238,57 @@ async def get_camera_info_endpoint(camera_id: int = 1) -> Dict[str, Any]:
 async def get_all_cameras_info_endpoint() -> Dict[str, Any]:
     """Get RTSP camera stream information for all cameras."""
     try:
-        all_info = get_all_cameras_info()
+        # Try to get camera info, but handle gracefully if cameras aren't available
+        try:
+            all_info = get_all_cameras_info()
+            available_cameras = get_available_cameras()
+        except Exception as camera_error:
+            # If cameras aren't available, return appropriate message
+            return {
+                "cameras": {},
+                "total_cameras": 0,
+                "available_camera_ids": [],
+                "status": "no_cameras_available",
+                "message": "No cameras currently available. Use /cameras/initialize to connect cameras.",
+                "error": str(camera_error)
+            }
+        
         return {
             "cameras": all_info,
             "total_cameras": len(all_info),
-            "available_camera_ids": get_available_cameras()
+            "available_camera_ids": available_cameras,
+            "status": "operational"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting all cameras info: {str(e)}")
+        return {
+            "cameras": {},
+            "total_cameras": 0,
+            "available_camera_ids": [],
+            "status": "error",
+            "error": str(e),
+            "message": "Error getting camera information"
+        }
 
 @app.get("/cameras/frames")
 async def get_all_camera_frames_endpoint() -> Dict[str, Any]:
     """Get current frames from all cameras as base64 encoded images."""
     try:
         results = {}
-        available_cameras = get_available_cameras()
+        
+        # Try to get available cameras, handle gracefully if none available
+        try:
+            available_cameras = get_available_cameras()
+        except Exception:
+            available_cameras = []
+        
+        if not available_cameras:
+            return {
+                "success": True,
+                "cameras": {},
+                "total_cameras": 0,
+                "message": "No cameras currently available",
+                "timestamp": time.time()
+            }
         
         for camera_id in available_cameras:
             try:
@@ -258,7 +315,14 @@ async def get_all_camera_frames_endpoint() -> Dict[str, Any]:
             "timestamp": time.time()
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting all camera frames: {str(e)}")
+        return {
+            "success": False,
+            "cameras": {},
+            "total_cameras": 0,
+            "error": str(e),
+            "message": "Error getting camera frames",
+            "timestamp": time.time()
+        }
 
 @app.get("/camera/frame")
 async def get_camera_frame_endpoint(camera_id: int = 1) -> Dict[str, Any]:
@@ -345,13 +409,27 @@ async def initialize_all_cameras_endpoint() -> Dict[str, Any]:
 async def list_cameras_endpoint() -> Dict[str, Any]:
     """Get list of available cameras."""
     try:
-        camera_ids = get_available_cameras()
-        return {
-            "available_cameras": camera_ids,
-            "total_cameras": len(camera_ids)
-        }
+        try:
+            camera_ids = get_available_cameras()
+            return {
+                "available_cameras": camera_ids,
+                "total_cameras": len(camera_ids),
+                "status": "operational" if camera_ids else "no_cameras"
+            }
+        except Exception:
+            return {
+                "available_cameras": [],
+                "total_cameras": 0,
+                "status": "not_initialized",
+                "message": "Cameras not initialized. Use /cameras/initialize to connect cameras."
+            }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing cameras: {str(e)}")
+        return {
+            "available_cameras": [],
+            "total_cameras": 0,
+            "status": "error",
+            "error": str(e)
+        }
 
 @app.get("/dashboard")
 async def dashboard():
@@ -395,6 +473,60 @@ async def test_camera_endpoint() -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Camera test failed: {str(e)}"
+        }
+
+@app.get("/camera/test-external")
+async def test_external_camera_endpoint() -> Dict[str, Any]:
+    """Test the new external camera connection (Camera 5)."""
+    try:
+        import cv2
+        camera_url = "rtsp://91.240.87.6:554/user=admin&password=&channel=1&stream=0.sdp"
+        
+        # Test connection with multiple backends
+        backends = [cv2.CAP_FFMPEG, cv2.CAP_GSTREAMER, cv2.CAP_ANY]
+        
+        for backend in backends:
+            try:
+                cap = cv2.VideoCapture(camera_url, backend)
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+                cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
+                
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    cap.release()
+                    
+                    if ret and frame is not None:
+                        return {
+                            "success": True,
+                            "camera_id": 5,
+                            "camera_url": camera_url,
+                            "backend_used": backend,
+                            "message": "External camera connection successful",
+                            "frame_shape": list(frame.shape),
+                            "resolution": f"{frame.shape[1]}x{frame.shape[0]}"
+                        }
+                    else:
+                        cap.release()
+                        continue
+                else:
+                    cap.release()
+                    continue
+                    
+            except Exception as e:
+                continue
+        
+        return {
+            "success": False,
+            "camera_id": 5,
+            "camera_url": camera_url,
+            "message": "Could not connect to external camera with any backend",
+            "tested_backends": [cv2.CAP_FFMPEG, cv2.CAP_GSTREAMER, cv2.CAP_ANY]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "camera_id": 5,
+            "message": f"External camera test failed: {str(e)}"
         }
 
 @app.websocket("/ws/camera/{camera_id}")
