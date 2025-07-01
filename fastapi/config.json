@@ -1,0 +1,41 @@
+{
+  "pharmacy_name": "Al Razy Pharmacy",
+  "llm_config": {
+    "api_url": "https://api.openai.com/v1/chat/completions",
+    "api_key": "${OPENAI_API_KEY}",
+    "model": "gpt-4o-mini",
+    "max_retries": 3,
+    "timeout": 30,
+    "enabled": true
+  },
+  "recording_config": {
+    "recordings_dir": "recordings",
+    "buffer_duration": 30,
+    "auto_record_on_threat_levels": ["HIGH", "CRITICAL"],
+    "default_recording_duration": 60,
+    "max_concurrent_recordings": 4
+  },
+  "webhook_config": {
+    "pharmacy_name": "Al Razy Pharmacy",
+    "webhooks": []
+  },
+  "activity_detection": {
+    "loiter_threshold": 45.0,
+    "movement_threshold": 50.0,
+    "rapid_movement_threshold": 200.0,
+    "max_people_per_zone": 2
+  },
+  "camera_config": {
+    "base_ip": "192.168.1.186",
+    "username": "admin",
+    "password": "tt55oo77",
+    "port": "554",
+    "cameras": {
+      "1": "/Streaming/Channels/101",
+      "2": "/Streaming/Channels/201",
+      "3": "/Streaming/Channels/301",
+      "4": "/Streaming/Channels/401"
+    }
+   
+  }
+}

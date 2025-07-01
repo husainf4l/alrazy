@@ -1,0 +1,228 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication and authorization
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  username     String   @unique
+  password     String
+  firstName    String?  @map("first_name")
+  lastName     String?  @map("last_name")
+  phone        String?
+  isActive     Boolean  @default(true) @map("is_active")
+  role         UserRole @default(USER)
+  companyId    Int?     @map("company_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  // Relations
+  company            Company?            @relation(fields: [companyId], references: [id])
+  adminCameras       Camera[]            @relation("CameraAdmin")
+  cameraAccess       CameraUserAccess[]
+  refreshTokens      RefreshToken[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+// Company model for multi-tenant support
+model Company {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  isActive    Boolean   @default(true) @map("is_active")
+  settings    Json?     // Company-specific settings
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  users       User[]
+  cameras     Camera[]
+
+  @@map("companies")
+}
+
+// Camera configuration model
+model Camera {
+  id                    Int       @id @default(autoincrement())
+  name                  String
+  description           String?
+  location              String?
+  rtspUrl               String    @map("rtsp_url")
+  username              String?
+  password              String?
+  isActive              Boolean   @default(true) @map("is_active")
+  companyId             Int       @map("company_id")
+  adminUserId           Int?      @map("admin_user_id")
+  
+  // Camera settings
+  resolutionWidth       Int       @default(1920) @map("resolution_width")
+  resolutionHeight      Int       @default(1080) @map("resolution_height")
+  fps                   Int       @default(30)
+  quality               Int       @default(80) // 1-100
+  enableMotionDetection Boolean   @default(true) @map("enable_motion_detection")
+  enableRecording       Boolean   @default(true) @map("enable_recording")
+  recordingDuration     Int       @default(60) @map("recording_duration") // seconds
+
+  // Status tracking
+  isOnline              Boolean   @default(false) @map("is_online")
+  lastConnectedAt       DateTime? @map("last_connected_at")
+  lastHealthCheck       DateTime? @map("last_health_check")
+
+  // Timestamps
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  company               Company             @relation(fields: [companyId], references: [id])
+  adminUser             User?               @relation("CameraAdmin", fields: [adminUserId], references: [id])
+  userAccess            CameraUserAccess[]
+  recordings            Recording[]
+  alerts                Alert[]
+
+  @@map("cameras")
+}
+
+// Junction table for many-to-many user-camera access
+model CameraUserAccess {
+  id          Int                 @id @default(autoincrement())
+  cameraId    Int                 @map("camera_id")
+  userId      Int                 @map("user_id")
+  accessLevel CameraAccessLevel   @default(VIEWER) @map("access_level")
+  grantedAt   DateTime            @default(now()) @map("granted_at")
+  grantedBy   Int?                @map("granted_by")
+
+  // Relations
+  camera      Camera              @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cameraId, userId])
+  @@map("camera_user_access")
+}
+
+// Recording model for video storage
+model Recording {
+  id          Int             @id @default(autoincrement())
+  cameraId    Int             @map("camera_id")
+  fileName    String          @map("file_name")
+  filePath    String          @map("file_path")
+  fileSize    BigInt          @map("file_size")
+  duration    Int             // seconds
+  startTime   DateTime        @map("start_time")
+  endTime     DateTime        @map("end_time")
+  triggerType RecordingTrigger @map("trigger_type")
+  metadata    Json?           // Additional recording metadata
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  camera      Camera          @relation(fields: [cameraId], references: [id])
+
+  @@map("recordings")
+}
+
+// Alert model for security events
+model Alert {
+  id          Int         @id @default(autoincrement())
+  cameraId    Int         @map("camera_id")
+  type        AlertType
+  severity    AlertSeverity @default(LOW)
+  title       String
+  description String?
+  metadata    Json?       // Alert-specific data
+  isRead      Boolean     @default(false) @map("is_read")
+  isResolved  Boolean     @default(false) @map("is_resolved")
+  resolvedBy  Int?        @map("resolved_by")
+  resolvedAt  DateTime?   @map("resolved_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  camera      Camera      @relation(fields: [cameraId], references: [id])
+
+  @@map("alerts")
+}
+
+// Refresh token model for JWT authentication
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int      @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// Audit log for tracking system activities
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  action      String
+  resource    String
+  resourceId  Int?     @map("resource_id")
+  details     Json?
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+enum CameraAccessLevel {
+  ADMIN     // Full control
+  MANAGER   // Can manage settings and users
+  OPERATOR  // Can control camera and view
+  VIEWER    // Can only view
+}
+
+enum RecordingTrigger {
+  MANUAL
+  MOTION_DETECTION
+  ALERT
+  SCHEDULE
+}
+
+enum AlertType {
+  MOTION_DETECTED
+  CAMERA_OFFLINE
+  STORAGE_FULL
+  UNAUTHORIZED_ACCESS
+  SYSTEM_ERROR
+  CUSTOM
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
