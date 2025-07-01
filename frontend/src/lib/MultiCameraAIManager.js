@@ -1,7 +1,7 @@
-/*
+"""
 Multi-Camera AI Streaming Manager for Frontend
 Handles real-time streaming of all cameras with AI detection
-*/
+"""
 
 class MultiCameraAIManager {
     constructor() {
