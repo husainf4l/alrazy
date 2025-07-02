@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   const cameraConfig = {
-    base_ip: "192.168.1.186",
+    base_ip: "149.200.251.12",
     username: "admin", 
     password: "tt55oo77",
     port: "554" // RTSP port

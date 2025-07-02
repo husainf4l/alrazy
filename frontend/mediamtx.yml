@@ -1,0 +1,111 @@
+# MediaMTX Configuration with Test Streams
+# This configuration creates reliable test RTSP streams for your dashboard
+
+###############################################
+# Global settings
+
+# Log level: debug, info, warn, error
+logLevel: info
+
+# API configuration
+api: yes
+apiAddress: :9997
+
+# RTSP configuration
+rtspAddress: :8554
+rtspTransports: [udp, tcp]
+
+# HLS configuration
+hls: yes
+hlsAddress: :8888
+
+# WebRTC configuration
+webrtc: yes
+webrtcAddress: :8889
+
+###############################################
+# Path settings
+
+paths:
+  # Your existing local camera
+  local-camera:
+    source: rtsp://149.200.251.12:554/stream
+    sourceProtocol: rtsp
+    sourceOnDemand: no
+
+  # Test pattern stream 1 - Color bars with counter
+  test-pattern-1:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=25 
+      -f lavfi -i sine=frequency=1000:sample_rate=44100 
+      -c:v libx264 -pix_fmt yuv420p -preset ultrafast -b:v 1000k 
+      -c:a aac -b:a 128k -g 25 
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Test pattern stream 2 - Moving mandelbrot pattern
+  test-pattern-2:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i mandelbrot=size=640x480:rate=15 
+      -f lavfi -i sine=frequency=800:sample_rate=44100 
+      -c:v libx264 -pix_fmt yuv420p -preset ultrafast -b:v 800k 
+      -c:a aac -b:a 128k -g 15
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Test pattern stream 3 - Color gradient with text overlay
+  test-pattern-3:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i color=c=blue:size=1920x1080:rate=30 
+      -f lavfi -i sine=frequency=440:sample_rate=48000 
+      -vf "drawtext=text='Test Camera 3 - %{localtime}':fontcolor=white:fontsize=48:x=10:y=10" 
+      -c:v libx264 -pix_fmt yuv420p -preset ultrafast -b:v 1500k 
+      -c:a aac -b:a 128k -g 30
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Test pattern stream 4 - High resolution noise pattern
+  test-pattern-4:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=30 
+      -f lavfi -i sine=frequency=220:sample_rate=48000 
+      -c:v libx264 -pix_fmt yuv420p -preset ultrafast -b:v 2000k 
+      -c:a aac -b:a 128k -g 30
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Test stream 5 - Webcam (if available)
+  test-webcam:
+    runOnInit: >
+      ffmpeg -f avfoundation -i "0:0" 
+      -c:v libx264 -pix_fmt yuv420p -preset ultrafast -b:v 1000k 
+      -c:a aac -b:a 128k 
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Motion detection test stream
+  test-motion:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i "testsrc=size=640x480:rate=25,format=yuv420p" 
+      -f lavfi -i sine=frequency=1000:sample_rate=44100 
+      -vf "drawtext=text='Motion Test - %{n}':fontcolor=red:fontsize=24:x=10:y=10" 
+      -c:v libx264 -preset ultrafast -b:v 800k 
+      -c:a aac -b:a 128k -g 25
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+###############################################
+# Recording settings (optional)
+record: no
+recordPath: ./recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+
+###############################################
+# Authentication (optional)
+authMethod: internal
+authInternalUsers:
+  - user: admin
+    pass: admin123
+    permissions:
+      - action: publish
+      - action: read
+      - action: api

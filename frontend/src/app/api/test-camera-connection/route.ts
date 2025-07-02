@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
     
     if (isConnectable) {
       return NextResponse.json({
+        success: true,
         connected: true,
         status: `Connected to ${ip}:${port}`,
         cameraId,
@@ -25,10 +26,12 @@ export async function POST(request: NextRequest) {
       });
     } else {
       return NextResponse.json({
+        success: false,
         connected: false,
         status: `Cannot reach ${ip}:${port}`,
         cameraId,
         timestamp: new Date().toISOString(),
+        error: 'Connection timeout or refused',
         details: {
           ip,
           port,
@@ -41,6 +44,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('❌ Camera connection test error:', error);
     return NextResponse.json({
+      success: false,
       connected: false,
       status: `Error: ${error}`,
       timestamp: new Date().toISOString(),

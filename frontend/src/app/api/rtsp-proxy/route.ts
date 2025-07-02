@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   }
 
   const cameraConfig = {
-    base_ip: "192.168.1.186",
+    base_ip: "149.200.251.12",
     username: "admin",
     password: "tt55oo77", 
     port: "554"
@@ -59,28 +59,46 @@ export async function GET(request: NextRequest) {
           console.error(`FFmpeg stderr: ${data}`);
         });
 
+        let isControllerClosed = false;
+
         ffmpeg.on('close', (code) => {
           console.log(`FFmpeg process closed with code ${code}`);
-          try {
-            controller.close();
-          } catch (error) {
-            console.error('Error closing controller:', error);
+          if (!isControllerClosed) {
+            try {
+              controller.close();
+              isControllerClosed = true;
+            } catch (error) {
+              console.error('Error closing controller:', error);
+            }
           }
         });
 
         ffmpeg.on('error', (error) => {
           console.error(`FFmpeg error: ${error}`);
-          try {
-            controller.error(error);
-          } catch (controllerError) {
-            console.error('Error with controller:', controllerError);
+          if (!isControllerClosed) {
+            try {
+              controller.error(error);
+              isControllerClosed = true;
+            } catch (controllerError) {
+              console.error('Error with controller:', controllerError);
+            }
           }
         });
 
         // Cleanup on stream cancellation
         return () => {
           console.log(`Cleaning up FFmpeg process for Camera ${cameraId}`);
-          ffmpeg.kill('SIGTERM');
+          if (!ffmpeg.killed) {
+            ffmpeg.kill('SIGTERM');
+          }
+          if (!isControllerClosed) {
+            try {
+              controller.close();
+              isControllerClosed = true;
+            } catch (error) {
+              console.error('Error closing controller during cleanup:', error);
+            }
+          }
         };
       }
     });

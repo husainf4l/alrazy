@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   const cameraConfig = {
-    base_ip: "192.168.1.186",
+    base_ip: "149.200.251.12",
     username: "admin",
     password: "tt55oo77",
     port: "80" // HTTP port for snapshots
@@ -75,7 +75,7 @@ function generatePlaceholderImage(cameraId: string, errorMessage: string = 'No s
       <rect width="640" height="360" fill="url(#grad1)" />
       <text x="320" y="150" font-family="Arial, sans-serif" font-size="24" fill="white" text-anchor="middle">Camera ${cameraId}</text>
       <text x="320" y="180" font-family="Arial, sans-serif" font-size="16" fill="#9ca3af" text-anchor="middle">${errorMessage}</text>
-      <text x="320" y="200" font-family="Arial, sans-serif" font-size="14" fill="#6b7280" text-anchor="middle">RTSP: rtsp://admin:***@192.168.1.186:554/Streaming/Channels/${cameraId}01</text>
+      <text x="320" y="200" font-family="Arial, sans-serif" font-size="14" fill="#6b7280" text-anchor="middle">RTSP: rtsp://admin:***@149.200.251.12:554/Streaming/Channels/${cameraId}01</text>
       <text x="320" y="220" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="middle">${new Date().toLocaleTimeString()}</text>
       <circle cx="320" cy="250" r="5" fill="#ef4444" opacity="0.8">
         <animate attributeName="opacity" values="0.8;0.2;0.8" dur="2s" repeatCount="indefinite"/>
