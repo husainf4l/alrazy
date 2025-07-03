@@ -29,6 +29,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting FastAPI application with auto-streaming...")
     
+    # Start auto-recovery task for better reliability
+    if not video_streaming_service._auto_recovery_started:
+        await video_streaming_service.start_auto_recovery()
+        video_streaming_service._auto_recovery_started = True
+    
     # Auto-initialize all cameras with WebRTC streams
     await auto_initialize_camera_streams()
     
@@ -164,8 +169,9 @@ async def health_check() -> Dict[str, str]:
 async def test_streaming_page():
     """Serve the auto-streaming test HTML page."""
     try:
-        with open("test_streaming_auto.html", "r") as f:
-            html_content = f.read()
+        import aiofiles
+        async with aiofiles.open("test_streaming_auto.html", "r") as f:
+            html_content = await f.read()
         return HTMLResponse(content=html_content)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Auto-streaming test page not found")
@@ -175,8 +181,9 @@ async def test_streaming_page():
 async def test_auto_streaming_page():
     """Serve the auto-streaming test HTML page with WebRTC links."""
     try:
-        with open("test_streaming_auto.html", "r") as f:
-            html_content = f.read()
+        import aiofiles
+        async with aiofiles.open("test_streaming_auto.html", "r") as f:
+            html_content = await f.read()
         return HTMLResponse(content=html_content)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Auto-streaming test page not found")
