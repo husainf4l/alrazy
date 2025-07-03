@@ -1,35 +1,9 @@
-# Al Razy Pharmacy Security System Requirements
-
-# FastAPI and Web Framework
+# Clean Requirements for FastAPI Application
 fastapi>=0.115.0
 uvicorn[standard]>=0.35.0
 pydantic>=2.11.0
-
-# Computer Vision and Image Processing
-opencv-python>=4.11.0
-numpy>=2.3.0
-pillow>=11.2.0
-
-# HTTP and WebSocket Communication
-aiohttp>=3.12.0
-websockets>=15.0.0
-requests>=2.32.0
-
-# Async File I/O
-aiofiles>=24.0.0
-
-# Utilities and Configuration
-python-dotenv>=1.1.0
-pyyaml>=6.0.0
-
-# Development and Testing (optional)
-pytest>=8.0.0
-pytest-asyncio>=0.24.0
-httpx>=0.28.0  # For testing async FastAPI
-
-# Logging and Monitoring
-structlog>=24.0.0  # Better structured logging
-
-# Additional utilities
-python-multipart>=0.0.9  # For form data
-jinja2>=3.1.0  # For template rendering if needed
+python-multipart>=0.0.9
+httpx>=0.25.0
+opencv-python>=4.8.0
+aiortc>=1.6.0
+websockets>=11.0
