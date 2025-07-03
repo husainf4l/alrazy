@@ -1,3 +1,0 @@
-"""
-Tests for the Al Razy Pharmacy Security System.
-"""
