@@ -138,48 +138,33 @@ export class AuthService {
   }
 
   async refreshToken(refreshTokenDto: RefreshTokenDto): Promise<{ accessToken: string }> {
-    try {
-      // First verify the JWT signature and decode it
-      const refreshSecret = this.configService.get<string>('jwt.secret') || 'your-super-secret-jwt-key';
-      const decoded = this.jwtService.verify(refreshTokenDto.refreshToken, {
-        secret: refreshSecret,
-        ignoreExpiration: false,
-      });
+    const refreshTokenRecord = await this.prisma.refreshToken.findUnique({
+      where: { token: refreshTokenDto.refreshToken },
+      include: { user: true },
+    });
 
-      // Then check if the token exists in our database
-      const refreshTokenRecord = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshTokenDto.refreshToken },
-        include: { user: true },
-      });
-
-      if (!refreshTokenRecord) {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-
-      if (refreshTokenRecord.expiresAt < new Date()) {
-        await this.prisma.refreshToken.delete({
-          where: { id: refreshTokenRecord.id },
-        });
-        throw new UnauthorizedException('Refresh token expired');
-      }
-
-      const payload: JwtPayload = {
-        sub: refreshTokenRecord.user.id,
-        email: refreshTokenRecord.user.email,
-        username: refreshTokenRecord.user.username,
-        role: refreshTokenRecord.user.role,
-        companyId: refreshTokenRecord.user.companyId ?? undefined,
-      };
-
-      const accessToken = this.jwtService.sign(payload);
-
-      return { accessToken };
-    } catch (error) {
-      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-        throw new UnauthorizedException('Invalid or expired refresh token');
-      }
-      throw error;
+    if (!refreshTokenRecord) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
+
+    if (refreshTokenRecord.expiresAt < new Date()) {
+      await this.prisma.refreshToken.delete({
+        where: { id: refreshTokenRecord.id },
+      });
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    const payload: JwtPayload = {
+      sub: refreshTokenRecord.user.id,
+      email: refreshTokenRecord.user.email,
+      username: refreshTokenRecord.user.username,
+      role: refreshTokenRecord.user.role,
+      companyId: refreshTokenRecord.user.companyId ?? undefined,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
+    return { accessToken };
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -189,14 +174,10 @@ export class AuthService {
   }
 
   private async generateRefreshToken(userId: number): Promise<string> {
-    const refreshSecret = this.configService.get<string>('jwt.secret') || 'your-super-secret-jwt-key';
-    const refreshExpiresIn = this.configService.get<string>('jwt.refreshExpiresIn') || '7d';
-    
     const token = this.jwtService.sign(
       { sub: userId },
       {
-        secret: refreshSecret,
-        expiresIn: refreshExpiresIn,
+        expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
       },
     );
 

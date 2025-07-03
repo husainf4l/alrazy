@@ -3,7 +3,6 @@
 import { useRouter } from 'next/navigation';
 import { Sidebar, Icon } from '../../../components';
 import { useAuth } from '../../../contexts/AuthContext';
-import CameraManagement from '../../../components/CameraManagement';
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
@@ -159,26 +158,7 @@ export default function SettingsPage() {
 
               {/* Camera Management Component */}
     
-              {user?.companyId ? (
-                <CameraManagement companyId={user.companyId} />
-              ) : (
-                <div className="bg-white rounded-2xl shadow-lg border border-gray-200/50 p-8 text-center">
-                  <div className="text-gray-500">
-                    <Icon name="camera" className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Camera Management</h3>
-                    <p className="text-sm text-gray-600 mb-4">
-                      {user ? 'Your account is not associated with a company. Please contact support.' : 'Please log in to manage your security cameras'}
-                    </p>
-                    <button 
-                      onClick={() => router.push('/login')}
-                      className="px-4 py-2 bg-gradient-to-r from-red-600 to-orange-600 text-white text-sm font-semibold rounded-lg hover:from-red-700 hover:to-orange-700 transition-all duration-200"
-                    >
-                      {user ? 'Contact Support' : 'Login to Continue'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
+         
               {/* AI Detection Settings */}
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200/50 overflow-hidden">
                 <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-gray-200/50">

@@ -64,6 +64,7 @@ model Camera {
   description           String?
   location              String?
   rtspUrl               String    @map("rtsp_url")
+  webRtcUrl             String?   @map("webrtc_url")
   username              String?
   password              String?
   isActive              Boolean   @default(true) @map("is_active")

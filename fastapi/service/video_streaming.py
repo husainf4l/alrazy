@@ -649,11 +649,58 @@ class VideoStreamingService:
             # Clean up from persistent streams if exists
             for camera_id, stream_info in list(self.persistent_streams.items()):
                 if stream_info.get("session_id") == session_id:
-                    del self.persistent_streams[camera_id]
+                    # Mark as inactive instead of deleting for recreation
+                    stream_info["status"] = "inactive"
+                    stream_info["last_cleanup"] = asyncio.get_event_loop().time()
+                    logger.info(f"Marked persistent stream {camera_id} as inactive")
                     break
                     
         except Exception as e:
             logger.error(f"Error cleaning up session {session_id}: {e}")
+    
+    async def recreate_session(self, session_id: str) -> Dict[str, Any]:
+        """Recreate a session if it was closed."""
+        try:
+            # Extract camera_id from session_id (format: camera_id_session_num)
+            camera_id = session_id.split('_')[0]
+            
+            # Check if we have persistent stream info for this camera
+            if camera_id in self.persistent_streams:
+                stream_info = self.persistent_streams[camera_id]
+                rtsp_url = stream_info.get("rtsp_url")
+                
+                if rtsp_url:
+                    # Create new WebRTC session
+                    result = await self.create_webrtc_offer(camera_id, rtsp_url)
+                    
+                    if result["success"]:
+                        new_session_id = result["session_id"]
+                        
+                        # Update persistent stream info
+                        webrtc_url = f"{self.base_url}/api/webrtc/stream/{new_session_id}"
+                        self.persistent_streams[camera_id].update({
+                            "session_id": new_session_id,
+                            "webrtc_url": webrtc_url,
+                            "status": "active",
+                            "recreated_at": asyncio.get_event_loop().time()
+                        })
+                        
+                        # Update camera database
+                        await self._update_camera_webrtc_url(camera_id, webrtc_url)
+                        
+                        logger.info(f"Successfully recreated session for camera {camera_id}: {new_session_id}")
+                        return {
+                            "success": True,
+                            "old_session_id": session_id,
+                            "new_session_id": new_session_id,
+                            "webrtc_url": webrtc_url
+                        }
+                    
+            return {"success": False, "error": "Unable to recreate session"}
+            
+        except Exception as e:
+            logger.error(f"Failed to recreate session {session_id}: {e}")
+            return {"success": False, "error": str(e)}
     
     async def create_persistent_webrtc_stream(self, camera_id: str, rtsp_url: str) -> Dict[str, Any]:
         """Create a persistent WebRTC stream and update camera with WebRTC URL."""

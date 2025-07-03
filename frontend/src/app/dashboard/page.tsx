@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { Sidebar, Icon, DashboardHeader } from "../../components";
-import CameraStreamGridEnhanced from "../../components/CameraStreamGridEnhanced";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
 

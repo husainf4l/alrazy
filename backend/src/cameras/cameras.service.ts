@@ -136,6 +136,34 @@ export class CamerasService {
     });
   }
 
+  async findAllCameras() {
+    // Return all cameras in the system - no user-based filtering
+    return this.prisma.camera.findMany({
+      include: {
+        company: {
+          select: { id: true, name: true },
+        },
+        adminUser: {
+          select: { id: true, username: true, firstName: true, lastName: true },
+        },
+        userAccess: {
+          include: {
+            user: {
+              select: { id: true, username: true, firstName: true, lastName: true },
+            },
+          },
+        },
+        _count: {
+          select: {
+            recordings: true,
+            alerts: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async findOne(id: number, userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -339,34 +367,6 @@ export class CamerasService {
     });
   }
 
-  async testConnection(testDto: TestCameraConnectionDto) {
-    try {
-      // Use ffprobe to test the RTSP connection
-      const command = `timeout 10 ffprobe -v quiet -print_format json -show_streams "${testDto.rtspUrl}"`;
-      const { stdout } = await execAsync(command);
-      
-      const result = JSON.parse(stdout);
-      
-      return {
-        success: true,
-        message: 'Camera connection successful',
-        streams: result.streams?.length || 0,
-        details: result.streams?.map(stream => ({
-          codec_type: stream.codec_type,
-          codec_name: stream.codec_name,
-          width: stream.width,
-          height: stream.height,
-          r_frame_rate: stream.r_frame_rate,
-        })) || [],
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Camera connection failed',
-        error: error.message,
-      };
-    }
-  }
 
   private checkCameraAccess(camera: any, user: any): boolean {
     // Super admins have access to all cameras

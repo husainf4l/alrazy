@@ -285,7 +285,29 @@ async def get_webrtc_stream_info(session_id: str):
         # Check if session exists
         active_streams = await video_streaming_service.get_active_streams()
         if session_id not in active_streams["active_sessions"]:
-            raise HTTPException(status_code=404, detail="WebRTC stream not found")
+            # Try to recreate the session
+            logger.info(f"Session {session_id} not found, attempting to recreate...")
+            recreate_result = await video_streaming_service.recreate_session(session_id)
+            
+            if recreate_result["success"]:
+                new_session_id = recreate_result["new_session_id"]
+                logger.info(f"Session recreated: {session_id} -> {new_session_id}")
+                
+                return {
+                    "success": True,
+                    "session_recreated": True,
+                    "old_session_id": session_id,
+                    "new_session_id": new_session_id,
+                    "status": "active",
+                    "webrtc_endpoints": {
+                        "offer": f"/api/streams/{new_session_id}/offer",
+                        "answer": f"/api/streams/{new_session_id}/answer", 
+                        "ice_candidate": f"/api/streams/{new_session_id}/ice-candidate"
+                    },
+                    "message": "WebRTC stream recreated and ready for connection"
+                }
+            
+            raise HTTPException(status_code=404, detail="WebRTC stream not found and could not be recreated")
         
         return {
             "success": True,
@@ -357,7 +379,33 @@ async def create_webrtc_offer(session_id: str):
         # Check if session exists
         active_streams = await video_streaming_service.get_active_streams()
         if session_id not in active_streams["active_sessions"]:
-            raise HTTPException(status_code=404, detail="Session not found or has been closed")
+            # Try to recreate the session
+            logger.info(f"Session {session_id} not found, attempting to recreate...")
+            recreate_result = await video_streaming_service.recreate_session(session_id)
+            
+            if recreate_result["success"]:
+                # Use the new session ID
+                new_session_id = recreate_result["new_session_id"]
+                logger.info(f"Session recreated: {session_id} -> {new_session_id}")
+                
+                # Get the new peer connection
+                if new_session_id in video_streaming_service.peer_connections:
+                    pc = video_streaming_service.peer_connections[new_session_id]
+                    offer = await pc.createOffer()
+                    await pc.setLocalDescription(offer)
+                    
+                    return {
+                        "success": True,
+                        "session_recreated": True,
+                        "old_session_id": session_id,
+                        "new_session_id": new_session_id,
+                        "offer": {
+                            "type": offer.type,
+                            "sdp": offer.sdp
+                        }
+                    }
+            
+            raise HTTPException(status_code=404, detail="Session not found and could not be recreated")
         
         # Get the peer connection for this session
         if session_id in video_streaming_service.peer_connections:

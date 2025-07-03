@@ -30,11 +30,11 @@ const Sidebar = ({ activeItem, onItemClick }: SidebarProps) => {
       path: "/dashboard",
     },
     {
-      id: "camera-management",
+      id: "cameras",
       icon: "camera",
-      label: "Camera Management",
-      badge: "100+",
-      path: "/camera-management",
+      label: "Cameras",
+      badge: "4",
+      path: "/dashboard/cameras",
     },
     {
       id: "analytics",

@@ -30,6 +30,11 @@ export class CreateCameraDto {
   @Matches(/^rtsp:\/\/.+/, { message: 'rtspUrl must be a valid RTSP URL starting with rtsp://' })
   rtspUrl: string;
 
+  @ApiProperty({ example: 'https://webrtc.example.com/stream/cam1', required: false })
+  @IsOptional()
+  @IsString()
+  webRtcUrl?: string;
+
   @ApiProperty({ example: 'admin', required: false })
   @IsOptional()
   @IsString()
@@ -115,6 +120,11 @@ export class UpdateCameraDto {
   @IsOptional()
   @Matches(/^rtsp:\/\/.+/, { message: 'rtspUrl must be a valid RTSP URL starting with rtsp://' })
   rtspUrl?: string;
+
+  @ApiProperty({ example: 'https://webrtc.example.com/stream/cam1', required: false })
+  @IsOptional()
+  @IsString()
+  webRtcUrl?: string;
 
   @ApiProperty({ example: 'admin', required: false })
   @IsOptional()

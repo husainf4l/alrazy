@@ -1,7 +1,6 @@
 import {
   Controller,
   Post,
-  Get,
   Body,
   UseGuards,
   Request,
@@ -55,7 +54,7 @@ export class AuthController {
     return { message: 'Logout successful' };
   }
 
-  @Get('profile')
+  @Post('profile')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get user profile' })
   @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })

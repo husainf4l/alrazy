@@ -43,6 +43,14 @@ export class CamerasController {
     return this.camerasService.findAll(req.user.userId);
   }
 
+  @Get('all')
+  @ApiOperation({ summary: 'Get all cameras in the system' })
+  @ApiResponse({ status: 200, description: 'All cameras retrieved successfully' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  findAllCameras() {
+    return this.camerasService.findAllCameras();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a specific camera' })
   @ApiResponse({ status: 200, description: 'Camera retrieved successfully' })
@@ -100,10 +108,5 @@ export class CamerasController {
     return this.camerasService.revokeAccess(id, targetUserId, req.user.userId);
   }
 
-  @Post('test-connection')
-  @ApiOperation({ summary: 'Test camera RTSP connection' })
-  @ApiResponse({ status: 200, description: 'Connection test completed' })
-  testConnection(@Body() testDto: TestCameraConnectionDto) {
-    return this.camerasService.testConnection(testDto);
-  }
+
 }
