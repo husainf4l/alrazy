@@ -9,12 +9,11 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Global prefix
-  const apiPrefix = configService.get<string>('apiPrefix');
-  app.setGlobalPrefix(apiPrefix || 'api');
+  app.setGlobalPrefix('api');
 
-  // CORS - Allow all origins for development
+  // CORS
   app.enableCors({
-    origin: true, // Allow all origins
+    origin: configService.get<string[]>('cors.origin') || ['http://localhost:3000'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -30,27 +29,29 @@ async function bootstrap() {
 
   // Swagger documentation
   const config = new DocumentBuilder()
-    .setTitle('Al Razy Camera Management API')
-    .setDescription('Enterprise camera management system with multi-user access control')
+    .setTitle('Security System API')
+    .setDescription('Person Detection & Door Lock Control System')
     .setVersion('1.0')
     .addBearerAuth()
-    .addTag('Authentication', 'User authentication endpoints')
-    .addTag('Companies', 'Company management endpoints')
-    .addTag('Cameras', 'Camera management endpoints')
+    .addTag('Authentication', 'User authentication and registration')
     .addTag('Users', 'User management endpoints')
+    .addTag('Cameras', 'Camera management endpoints')
+    .addTag('Events', 'Event detection and monitoring')
+    .addTag('Lock Control', 'Door lock/relay control endpoints')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup(`${apiPrefix}/docs`, app, document, {
+  SwaggerModule.setup('docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
     },
   });
 
   const port = configService.get<number>('port');
-  await app.listen(port || 4000);
+  await app.listen(port || 3000);
   
-  console.log(`🚀 Al Razy Backend is running on: http://localhost:${port}/${apiPrefix}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/${apiPrefix}/docs`);
+  console.log(`✅ Security System Backend is running on: http://localhost:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/docs`);
+  console.log(`🔌 WebSocket ready at: ws://localhost:${port}`);
 }
 bootstrap();

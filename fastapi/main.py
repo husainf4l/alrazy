@@ -65,13 +65,13 @@ async def auto_initialize_camera_streams():
         
         for camera in cameras:
             try:
-                camera_id = str(camera.get('id'))
+                camera_id = camera.get('id')  # Keep as integer
                 camera_name = camera.get('name', f'Camera {camera_id}')
                 
                 logger.info(f"🔄 Processing camera {camera_id}: {camera_name}")
                 
-                # Get RTSP URL for this camera
-                rtsp_url = await camera_service.get_rtsp_url(camera_id)
+                # Get RTSP URL for this camera from standalone database
+                rtsp_url = camera_service.get_camera_rtsp_url(camera_id)
                 
                 if not rtsp_url:
                     logger.warning(f"⚠️ No RTSP URL found for camera {camera_id}")
@@ -340,8 +340,8 @@ async def recreate_webrtc_stream(session_id: str):
         # Extract camera_id from session_id (format: camera_id_session_num)
         camera_id = session_id.split('_')[0]
         
-        # Get RTSP URL for this camera
-        rtsp_url = await camera_service.get_rtsp_url(camera_id)
+        # Get RTSP URL for this camera from standalone database
+        rtsp_url = camera_service.get_camera_rtsp_url(int(camera_id))
         if not rtsp_url:
             raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found or no RTSP URL")
         

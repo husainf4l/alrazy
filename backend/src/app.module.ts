@@ -4,9 +4,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
-import { CompaniesModule } from './companies/companies.module';
-import { CamerasModule } from './cameras/cameras.module';
-import { UsersModule } from './users/users.module';
+import { UserModule } from './user/user.module';
+import { CameraModule } from './camera/camera.module';
+import { EventModule } from './event/event.module';
+import { LockModule } from './lock/lock.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -17,9 +18,10 @@ import configuration from './config/configuration';
     }),
     PrismaModule,
     AuthModule,
-    CompaniesModule,
-    CamerasModule,
-    UsersModule,
+    UserModule,
+    CameraModule,
+    EventModule,
+    LockModule,
   ],
   controllers: [AppController],
   providers: [AppService],

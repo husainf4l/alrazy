@@ -1272,7 +1272,7 @@ class VideoStreamingService:
                 del self.persistent_streams[camera_id]
                 
                 # Update camera database to remove WebRTC URL
-                await self._update_camera_webrtc_url(camera_id, None)
+                self._update_camera_webrtc_url(camera_id, None)
                 
                 logger.info(f"Stopped persistent stream for camera {camera_id}")
                 return {
@@ -1356,7 +1356,7 @@ class VideoStreamingService:
                         })
                         
                         # Update camera database
-                        await self._update_camera_webrtc_url(camera_id, webrtc_url)
+                        self._update_camera_webrtc_url(camera_id, webrtc_url)
                         
                         logger.info(f"Successfully recreated session for camera {camera_id}: {new_session_id}")
                         return {
@@ -1384,34 +1384,26 @@ class VideoStreamingService:
                 "error": str(e)
             }
     
-    async def _update_camera_webrtc_url(self, camera_id: str, webrtc_url: Optional[str]) -> Dict[str, Any]:
-        """Update camera in NestJS backend with WebRTC URL."""
+    def _update_camera_webrtc_url(self, camera_id: str, webrtc_url: Optional[str]) -> Dict[str, Any]:
+        """Update camera in standalone database with WebRTC URL."""
         try:
-            # Import camera service to reuse authentication
+            # Use standalone camera service to update in-memory database
             from service.cameras import camera_service
             
-            # NestJS API endpoint
-            api_url = f"http://localhost:4005/api/v1/cameras/{camera_id}"
+            success = camera_service.update_camera_webrtc_url(int(camera_id), webrtc_url)
             
-            # Payload for PATCH request
-            payload = {
-                "webRtcUrl": webrtc_url
-            }
-            
-            # Get authenticated headers from camera service
-            client = await camera_service._get_http_client()
-            headers = await camera_service._get_headers()
-            
-            # Make authenticated request using httpx
-            response = await client.patch(api_url, json=payload, headers=headers)
-            response.raise_for_status()
-            
-            logger.info(f"Successfully updated camera {camera_id} with WebRTC URL")
-            return {
-                "success": True,
-                "status_code": response.status_code,
-                "response": response.json() if response.content else {}
-            }
+            if success:
+                logger.info(f"Successfully updated camera {camera_id} with WebRTC URL in standalone database")
+                return {
+                    "success": True,
+                    "status_code": 200,
+                    "response": {"message": "Updated in standalone database"}
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Camera {camera_id} not found in standalone database"
+                }
                     
         except Exception as e:
             logger.error(f"Failed to update camera {camera_id} in database: {e}")
@@ -1464,9 +1456,9 @@ class VideoStreamingService:
         try:
             logger.info(f"Starting complete analyzed WebRTC flow for camera {camera_id}")
             
-            # Step 1: Get RTSP URL from camera endpoint
+            # Step 1: Get RTSP URL from standalone camera database
             from service.cameras import camera_service
-            rtsp_url = await camera_service.get_rtsp_url(camera_id)
+            rtsp_url = camera_service.get_camera_rtsp_url(int(camera_id))
             
             if not rtsp_url:
                 return {
@@ -1502,7 +1494,7 @@ class VideoStreamingService:
             }
             
             # Step 5: Update camera in database with WebRTC URL
-            update_result = await self._update_camera_webrtc_url(camera_id, webrtc_url)
+            update_result = self._update_camera_webrtc_url(camera_id, webrtc_url)
             
             logger.info(f"Completed analyzed WebRTC flow for camera {camera_id}")
             

@@ -7,7 +7,7 @@ export class LoginDto {
   @MinLength(3)
   username: string;
 
-  @ApiProperty({ example: 'tt55oo77' })
+  @ApiProperty({ example: 'password123' })
   @IsString()
   @MinLength(6)
   password: string;
@@ -23,7 +23,7 @@ export class RegisterDto {
   @MinLength(3)
   username: string;
 
-  @ApiProperty({ example: 'tt55oo77' })
+  @ApiProperty({ example: 'password123' })
   @IsString()
   @MinLength(6)
   password: string;
@@ -37,19 +37,4 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   lastName?: string;
-
-  @ApiProperty({ example: '+966501234567', required: false })
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @ApiProperty({ example: 1, required: false })
-  @IsOptional()
-  companyId?: number;
-}
-
-export class RefreshTokenDto {
-  @ApiProperty()
-  @IsString()
-  refreshToken: string;
 }
