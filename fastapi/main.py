@@ -78,8 +78,8 @@ async def auto_initialize_camera_streams():
                     failed_streams += 1
                     continue
                 
-                # Create analyzed WebRTC stream
-                result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id)
+                # Create analyzed WebRTC stream with default live mode for maximum speed
+                result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id, "live")
                 
                 if result["success"]:
                     successful_streams += 1
@@ -189,6 +189,18 @@ async def test_auto_streaming_page():
         raise HTTPException(status_code=404, detail="Auto-streaming test page not found")
 
 
+@app.get("/camera-dashboard", response_class=HTMLResponse)
+async def camera_dashboard_page():
+    """Serve the camera dashboard HTML page."""
+    try:
+        import aiofiles
+        async with aiofiles.open("camera_dashboard.html", "r") as f:
+            html_content = await f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Camera dashboard page not found")
+
+
 # Status and monitoring endpoints
 @app.get("/api/status")
 async def get_system_status():
@@ -279,6 +291,80 @@ async def get_stream_analysis(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get analysis: {str(e)}")
+
+
+@app.get("/api/cameras/{camera_id}/tracking")
+async def get_camera_tracking(camera_id: str):
+    """Get tracking statistics for a specific camera."""
+    try:
+        # Find the session for this camera
+        if camera_id in video_streaming_service.persistent_streams:
+            stream_info = video_streaming_service.persistent_streams[camera_id]
+            session_id = stream_info.get("session_id")
+            
+            if session_id and session_id in video_streaming_service.video_tracks:
+                video_track = video_streaming_service.video_tracks[session_id]
+                
+                tracking_stats = {
+                    "success": True,
+                    "camera_id": camera_id,
+                    "session_id": session_id,
+                    "current_people_count": video_track.people_count,
+                    "total_tracked_people": video_track.tracked_people_count,
+                    "active_track_ids": list(video_track.current_tracked_ids),
+                    "track_history_size": len(video_track.track_history),
+                    "avg_people_count": sum(video_track.person_count_history) / len(video_track.person_count_history) if video_track.person_count_history else 0,
+                    "streaming_mode": stream_info.get("streaming_mode", "unknown"),
+                    "analysis_enabled": stream_info.get("analysis_enabled", False)
+                }
+                
+                return JSONResponse(content=tracking_stats)
+            else:
+                raise HTTPException(status_code=404, detail="Video track not found for camera")
+        else:
+            raise HTTPException(status_code=404, detail="Camera stream not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get tracking stats: {str(e)}")
+
+
+@app.get("/api/tracking/summary")
+async def get_all_tracking_summary():
+    """Get tracking summary for all cameras."""
+    try:
+        summary = {
+            "success": True,
+            "total_cameras": len(video_streaming_service.persistent_streams),
+            "cameras": []
+        }
+        
+        for camera_id, stream_info in video_streaming_service.persistent_streams.items():
+            session_id = stream_info.get("session_id")
+            
+            if session_id and session_id in video_streaming_service.video_tracks:
+                video_track = video_streaming_service.video_tracks[session_id]
+                
+                camera_stats = {
+                    "camera_id": camera_id,
+                    "current_people": video_track.people_count,
+                    "total_tracked": video_track.tracked_people_count,
+                    "active_ids": len(video_track.current_tracked_ids),
+                    "streaming_mode": stream_info.get("streaming_mode", "unknown"),
+                    "analysis_enabled": stream_info.get("analysis_enabled", False)
+                }
+                
+                summary["cameras"].append(camera_stats)
+        
+        # Calculate totals
+        summary["total_current_people"] = sum(c["current_people"] for c in summary["cameras"])
+        summary["total_tracked_people"] = sum(c["total_tracked"] for c in summary["cameras"])
+        
+        return JSONResponse(content=summary)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get tracking summary: {str(e)}")
 
 
 @app.get("/api/webrtc/stream/{session_id}")
@@ -505,6 +591,71 @@ async def restart_camera_stream(camera_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to restart stream: {str(e)}")
 
 
+@app.post("/api/cameras/{camera_id}/stream/create")
+async def create_camera_stream(camera_id: str, streaming_mode: str = "balanced"):
+    """Create a camera stream with specified streaming mode."""
+    try:
+        # Validate streaming mode
+        valid_modes = ["live", "balanced", "analysis"]
+        if streaming_mode not in valid_modes:
+            raise HTTPException(status_code=400, detail=f"Invalid streaming mode. Must be one of: {', '.join(valid_modes)}")
+        
+        # Stop existing stream if it exists
+        if camera_id in video_streaming_service.persistent_streams:
+            await video_streaming_service.stop_persistent_stream(camera_id)
+            await asyncio.sleep(1)
+        
+        # Create WebRTC stream with specified mode
+        result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id, streaming_mode)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                **result,
+                "message": f"Camera {camera_id} stream created successfully in {streaming_mode} mode"
+            })
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to create stream"))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create stream: {str(e)}")
+
+
+@app.post("/api/cameras/{camera_id}/stream/mode")
+async def change_streaming_mode(camera_id: str, streaming_mode: str):
+    """Change the streaming mode of an existing camera stream."""
+    try:
+        # Validate streaming mode
+        valid_modes = ["live", "balanced", "analysis"]
+        if streaming_mode not in valid_modes:
+            raise HTTPException(status_code=400, detail=f"Invalid streaming mode. Must be one of: {', '.join(valid_modes)}")
+        
+        # Check if stream exists
+        if camera_id not in video_streaming_service.persistent_streams:
+            raise HTTPException(status_code=404, detail=f"No active stream found for camera {camera_id}")
+        
+        # Stop existing stream
+        await video_streaming_service.stop_persistent_stream(camera_id)
+        await asyncio.sleep(1)
+        
+        # Create new stream with new mode
+        result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id, streaming_mode)
+        
+        if result["success"]:
+            return JSONResponse(content={
+                **result,
+                "message": f"Camera {camera_id} streaming mode changed to {streaming_mode}"
+            })
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to change streaming mode"))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to change streaming mode: {str(e)}")
+
+
 @app.delete("/api/cameras/{camera_id}/stream")
 async def stop_camera_stream(camera_id: str):
     """Manually stop a camera stream."""
@@ -520,8 +671,8 @@ if __name__ == "__main__":
     
     print("🚀 Starting Auto-Streaming FastAPI Application...")
     print("📺 This will automatically create WebRTC streams for all cameras")
-    print("🔍 OpenCV analysis (motion, person, face detection) will be enabled")
-    print("💾 Camera records will be updated with WebRTC URLs in NestJS backend")
+    print("🔍 YOLO-powered ultra-fast person detection enabled")
+    print("💾 Camera records will be updated with WebRTC URLs")
     print("🌐 Server will start at: http://localhost:8000")
     
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

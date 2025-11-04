@@ -57,3 +57,5 @@ async def test_camera_service():
 
 if __name__ == "__main__":
     asyncio.run(test_camera_service())
+
+

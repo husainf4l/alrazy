@@ -322,6 +322,110 @@
                 flex-direction: column;
             }
         }
+        
+        /* Fullscreen Modal Styles */
+        .fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .fullscreen-content {
+            width: 95vw;
+            height: 95vh;
+            background: #1a1a1a;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        
+        .fullscreen-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #333;
+            background: #2a2a2a;
+            border-radius: 10px 10px 0 0;
+        }
+        
+        .fullscreen-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .close-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+        }
+        
+        .close-btn:hover {
+            background: #dc2626;
+        }
+        
+        .fullscreen-video-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            border-radius: 0 0 10px 10px;
+            overflow: hidden;
+        }
+        
+        .fullscreen-placeholder {
+            text-align: center;
+            color: #666;
+            font-size: 1.5rem;
+        }
+        
+        .fullscreen-placeholder div {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        
+        .fullscreen-video-stream {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        .fullscreen-controls {
+            padding: 1rem 1.5rem;
+            background: #2a2a2a;
+            border-top: 1px solid #333;
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .fullscreen-controls .btn {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -399,6 +503,7 @@
         // Global state
         let cameras = [];
         let peerConnections = {};
+        let fullscreenPeerConnection = null;
         let systemStartTime = Date.now();
         
         // Update system uptime
@@ -448,6 +553,37 @@
             document.getElementById('total-cameras').textContent = totalCameras;
             document.getElementById('online-cameras').textContent = onlineCameras;
             document.getElementById('streaming-cameras').textContent = streamingCameras;
+            
+            // Update tracking stats for each camera
+            updateTrackingStats();
+        }
+        
+        // Update tracking statistics for all cameras
+        async function updateTrackingStats() {
+            try {
+                const response = await fetch(`${API_BASE}/api/tracking/summary`);
+                const data = await response.json();
+                
+                if (data.success && data.cameras) {
+                    data.cameras.forEach(cameraStats => {
+                        const peopleCountEl = document.getElementById(`people-count-${cameraStats.camera_id}`);
+                        const trackedCountEl = document.getElementById(`tracked-count-${cameraStats.camera_id}`);
+                        
+                        if (peopleCountEl) {
+                            peopleCountEl.textContent = cameraStats.current_people || 0;
+                            peopleCountEl.style.color = cameraStats.current_people > 0 ? '#10b981' : '#6b7280';
+                            peopleCountEl.style.fontWeight = cameraStats.current_people > 0 ? 'bold' : 'normal';
+                        }
+                        
+                        if (trackedCountEl) {
+                            trackedCountEl.textContent = cameraStats.total_tracked || 0;
+                            trackedCountEl.style.color = cameraStats.total_tracked > 0 ? '#3b82f6' : '#6b7280';
+                        }
+                    });
+                }
+            } catch (error) {
+                console.debug('Could not update tracking stats:', error);
+            }
         }
 
         // Load cameras from API
@@ -462,33 +598,34 @@
                 if (data.success) {
                     cameras = data.cameras || [];
                     
-                    // Also get active streams to match with cameras
+                        // Also get active streams to match with cameras
                     try {
                         const streamsResponse = await fetch(`${API_BASE}/api/streams/status`);
                         const streamsData = await streamsResponse.json();
                         
                         if (streamsData.success) {
-                            // Map sessions to cameras
-                            const activeSessions = streamsData.active_streams?.active_sessions || [];
+                            const persistentStreams = streamsData.persistent_streams?.persistent_streams || {};
+                            
                             cameras.forEach(camera => {
                                 const cameraId = camera.id || camera.camera_id;
-                                // Find matching session for this camera (session ID format: "{cameraId}_{index}")
-                                const sessionId = activeSessions.find(session => 
-                                    session.startsWith(cameraId + '_')
-                                );
-                                if (sessionId) {
-                                    camera.sessionId = sessionId;
-                                    camera.status = 'online';
+                                const cameraIdStr = cameraId.toString();
+                                
+                                // Check if this camera has a persistent WebRTC stream
+                                if (persistentStreams[cameraIdStr]) {
+                                    const streamInfo = persistentStreams[cameraIdStr];
+                                    camera.sessionId = streamInfo.session_id;
+                                    camera.webrtc_url = streamInfo.webrtc_url;
+                                    camera.status = streamInfo.status === 'active' ? 'online' : 'offline';
+                                    console.log(`Camera ${cameraId} has persistent WebRTC stream:`, streamInfo);
                                 } else {
                                     camera.status = 'offline';
+                                    console.log(`Camera ${cameraId} has no persistent stream`);
                                 }
                             });
                         }
                     } catch (streamError) {
                         console.warn('Could not fetch stream status:', streamError);
-                    }
-                    
-                    renderCameras();
+                    }                    renderCameras();
                     updateStats();
                     updateConnectionStatus('connected');
                     showStatus(`Successfully loaded ${cameras.length} cameras`, 'success');
@@ -530,19 +667,18 @@
             const cameraStatus = camera.status || 'offline';
             const rtspUrl = camera.rtsp_url || camera.rtspUrl || '';
             const sessionId = camera.sessionId || '';
+            const currentMode = camera.streaming_mode || 'balanced';
             
             return `
-                <div class="camera-card" id="camera-${cameraId}" data-session-id="${sessionId}">
-                    <div class="camera-header">
-                        <div class="camera-title">
-                            📹 ${cameraName}
-                            <span class="camera-status ${getStatusClass(cameraStatus)}">
-                                ${cameraStatus.toUpperCase()}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <div class="video-container" id="video-container-${cameraId}">
+                    <div class="camera-card" id="camera-${cameraId}" data-session-id="${sessionId}" onclick="openFullscreenView('${cameraId}')">
+                        <div class="camera-header">
+                            <div class="camera-title">
+                                📹 ${cameraName}
+                                <span class="camera-status ${getStatusClass(cameraStatus)}">
+                                    ${cameraStatus.toUpperCase()}
+                                </span>
+                            </div>
+                        </div>                    <div class="video-container" id="video-container-${cameraId}">
                         <div class="video-placeholder">
                             <div>📷</div>
                             <p>Click "Start Stream" to view camera feed</p>
@@ -553,11 +689,19 @@
                     </div>
                     
                     <div class="camera-controls">
+                        <select id="mode-select-${cameraId}" class="btn" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem;">
+                            <option value="live" ${currentMode === 'live' ? 'selected' : ''}>⚡ Live (Fast)</option>
+                            <option value="balanced" ${currentMode === 'balanced' ? 'selected' : ''}>⚖️ Balanced</option>
+                            <option value="analysis" ${currentMode === 'analysis' ? 'selected' : ''}>🔍 Analysis</option>
+                        </select>
                         <button class="btn btn-success" id="start-btn-${cameraId}" onclick="startStream('${cameraId}')">
                             ▶️ Start Stream
                         </button>
                         <button class="btn btn-danger" id="stop-btn-${cameraId}" onclick="stopStream('${cameraId}')" disabled>
                             ⏹️ Stop Stream
+                        </button>
+                        <button class="btn btn-primary" onclick="changeStreamingMode('${cameraId}')">
+                            🔄 Change Mode
                         </button>
                         <button class="btn btn-primary" onclick="captureSnapshot('${cameraId}')">
                             📸 Snapshot
@@ -567,8 +711,13 @@
                     <div class="camera-info">
                         <div class="info-item"><strong>Camera ID:</strong> ${cameraId}</div>
                         <div class="info-item"><strong>Status:</strong> ${cameraStatus}</div>
+                        <div class="info-item"><strong>Streaming Mode:</strong> ${camera.streaming_mode || 'live'}</div>
+                        <div class="info-item"><strong>Analysis Enabled:</strong> ${camera.analysis_enabled !== false ? 'Yes' : 'No'}</div>
+                        <div class="info-item"><strong>Current People:</strong> <span id="people-count-${cameraId}">0</span></div>
+                        <div class="info-item"><strong>Total Tracked:</strong> <span id="tracked-count-${cameraId}">0</span></div>
                         <div class="info-item"><strong>Session ID:</strong> ${sessionId || 'Not available'}</div>
-                        <div class="info-item"><strong>Stream URL:</strong> ${rtspUrl || 'Not available'}</div>
+                        <div class="info-item"><strong>WebRTC URL:</strong> ${camera.webrtc_url || 'Not available'}</div>
+                        <div class="info-item"><strong>RTSP URL:</strong> ${rtspUrl || 'Not available'}</div>
                         <div class="info-item"><strong>Resolution:</strong> ${camera.resolution || 'Auto'}</div>
                     </div>
                 </div>
@@ -598,116 +747,122 @@
                 const startBtn = document.getElementById(`start-btn-${cameraId}`);
                 if (startBtn) startBtn.disabled = true;
                 
-                // Get session ID from camera card
-                const cameraCard = document.getElementById(`camera-${cameraId}`);
-                let sessionId = cameraCard ? cameraCard.dataset.sessionId : '';
-                
-                if (!sessionId) {
-                    // If no session ID, we need to find or create one
-                    const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
-                    if (camera && camera.sessionId) {
-                        sessionId = camera.sessionId;
-                    } else {
-                        throw new Error(`No active session found for camera ${cameraId}. Please refresh cameras.`);
-                    }
+                // Get camera data from the cameras array
+                const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                if (!camera) {
+                    throw new Error(`Camera ${cameraId} not found`);
                 }
                 
-                // Create peer connection
-                const pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
-                
-                // Handle incoming stream
-                pc.ontrack = (event) => {
-                    const video = document.createElement('video');
-                    video.srcObject = event.streams[0];
-                    video.autoplay = true;
-                    video.playsInline = true;
-                    video.muted = true;
-                    video.className = 'video-stream';
+                // Check if camera has a WebRTC URL (persistent stream)
+                if (camera.webrtc_url && camera.sessionId) {
+                    console.log(`Using persistent WebRTC stream for camera ${cameraId}`);
+                    console.log(`WebRTC URL: ${camera.webrtc_url}`);
+                    console.log(`Session ID: ${camera.sessionId}`);
                     
-                    const container = document.getElementById(`video-container-${cameraId}`);
-                    if (container) {
-                        container.innerHTML = '';
-                        container.appendChild(video);
+                    // Create peer connection for the persistent stream
+                    const pc = new RTCPeerConnection({
+                        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    });
+                    
+                    // Handle incoming stream
+                    pc.ontrack = (event) => {
+                        console.log(`Received track for camera ${cameraId}:`, event.streams[0]);
+                        const video = document.createElement('video');
+                        video.srcObject = event.streams[0];
+                        video.autoplay = true;
+                        video.playsInline = true;
+                        video.muted = true;
+                        video.className = 'video-stream';
+                        
+                        const container = document.getElementById(`video-container-${cameraId}`);
+                        if (container) {
+                            container.innerHTML = '';
+                            container.appendChild(video);
+                        }
+                        
+                        const overlay = document.getElementById(`video-overlay-${cameraId}`);
+                        if (overlay) overlay.style.display = 'block';
+                        
+                        const stopBtn = document.getElementById(`stop-btn-${cameraId}`);
+                        if (stopBtn) stopBtn.disabled = false;
+                        
+                        showStatus(`Stream started successfully for camera ${cameraId}`, 'success');
+                        updateStats();
+                    };
+                    
+                    // Handle connection state changes
+                    pc.onconnectionstatechange = () => {
+                        console.log(`Camera ${cameraId} connection state:`, pc.connectionState);
+                        if (pc.connectionState === 'failed') {
+                            showStatus(`Connection failed for camera ${cameraId}`, 'error');
+                        } else if (pc.connectionState === 'connected') {
+                            showStatus(`Stream connected for camera ${cameraId}`, 'success');
+                        }
+                    };
+                    
+                    // Handle ICE connection state changes
+                    pc.oniceconnectionstatechange = () => {
+                        console.log(`Camera ${cameraId} ICE connection state:`, pc.iceConnectionState);
+                    };
+                    
+                    // Request stream from the persistent WebRTC endpoint using session ID
+                    console.log(`Requesting stream from persistent endpoint for session: ${camera.sessionId}`);
+                    const response = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/offer`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errorText}`);
                     }
                     
-                    const overlay = document.getElementById(`video-overlay-${cameraId}`);
-                    if (overlay) overlay.style.display = 'block';
+                    const data = await response.json();
                     
-                    const stopBtn = document.getElementById(`stop-btn-${cameraId}`);
-                    if (stopBtn) stopBtn.disabled = false;
+                    if (!data.success) {
+                        throw new Error(data.error || 'Failed to get stream offer');
+                    }
                     
-                    showStatus(`Stream started successfully for camera ${cameraId}`, 'success');
-                    updateStats();
-                };
-                
-                // Handle connection state changes
-                pc.onconnectionstatechange = () => {
-                    console.log(`Camera ${cameraId} connection state:`, pc.connectionState);
-                    if (pc.connectionState === 'failed') {
-                        showStatus(`Connection failed for camera ${cameraId}`, 'error');
+                    // Set remote description and create answer
+                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    
+                    // Send answer to server
+                    const answerResponse = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/answer`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sdp: answer.sdp,
+                            type: answer.type
+                        })
+                    });
+                    
+                    if (!answerResponse.ok) {
+                        const errorText = await answerResponse.text();
+                        throw new Error(`HTTP ${answerResponse.status}: ${errorText}`);
                     }
-                };
-                
-                // Handle ICE connection state changes
-                pc.oniceconnectionstatechange = () => {
-                    console.log(`Camera ${cameraId} ICE connection state:`, pc.iceConnectionState);
-                };
-                
-                // Request stream from server using session ID
-                console.log(`Requesting stream for session: ${sessionId}`);
-                const response = await fetch(`${API_BASE}/api/streams/${sessionId}/offer`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
+                    
+                    const answerData = await answerResponse.json();
+                    
+                    if (!answerData.success) {
+                        throw new Error(answerData.error || 'Failed to process answer');
                     }
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    
+                    // Store peer connection
+                    peerConnections[cameraId] = {
+                        pc: pc,
+                        sessionId: camera.sessionId,
+                        webrtcUrl: camera.webrtc_url
+                    };
+                    
+                } else {
+                    throw new Error(`No WebRTC stream available for camera ${cameraId}. Please check if the camera is properly configured and the server has created a persistent stream.`);
                 }
-                
-                const data = await response.json();
-                
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to get stream offer');
-                }
-                
-                // Set remote description and create answer
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                
-                // Send answer to server
-                const answerResponse = await fetch(`${API_BASE}/api/streams/${sessionId}/answer`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        sdp: answer.sdp,
-                        type: answer.type
-                    })
-                });
-                
-                if (!answerResponse.ok) {
-                    const errorText = await answerResponse.text();
-                    throw new Error(`HTTP ${answerResponse.status}: ${errorText}`);
-                }
-                
-                const answerData = await answerResponse.json();
-                
-                if (!answerData.success) {
-                    throw new Error(answerData.error || 'Failed to process answer');
-                }
-                
-                // Store peer connection
-                peerConnections[cameraId] = {
-                    pc: pc,
-                    sessionId: sessionId
-                };
                 
             } catch (error) {
                 showStatus(`Failed to start stream for camera ${cameraId}: ${error.message}`, 'error');
@@ -766,41 +921,52 @@
             }
         }
 
-        // Capture snapshot from camera
-        async function captureSnapshot(cameraId) {
+                // Change streaming mode for a camera
+        async function changeStreamingMode(cameraId) {
             try {
-                showStatus(`Capturing snapshot from camera ${cameraId}...`, 'info');
+                const modeSelect = document.getElementById(`mode-select-${cameraId}`);
+                const selectedMode = modeSelect.value;
                 
-                // For now, capture from video element if streaming
-                const videoElement = document.querySelector(`#video-container-${cameraId} video`);
-                if (videoElement && videoElement.videoWidth > 0) {
-                    // Create canvas to capture frame
-                    const canvas = document.createElement('canvas');
-                    canvas.width = videoElement.videoWidth;
-                    canvas.height = videoElement.videoHeight;
+                showStatus(`Changing streaming mode for camera ${cameraId} to ${selectedMode}...`, 'info');
+                
+                // Stop existing stream if running
+                if (peerConnections[cameraId]) {
+                    await stopStream(cameraId);
+                }
+                
+                // Call API to change mode
+                const response = await fetch(`${API_BASE}/api/cameras/${cameraId}/stream/mode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        streaming_mode: selectedMode
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus(`Streaming mode changed to ${selectedMode} for camera ${cameraId}`, 'success');
                     
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(videoElement, 0, 0);
+                    // Update camera data
+                    const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                    if (camera) {
+                        camera.streaming_mode = selectedMode;
+                        camera.analysis_enabled = selectedMode !== 'live';
+                    }
                     
-                    // Convert to blob and download
-                    canvas.toBlob((blob) => {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `camera_${cameraId}_snapshot_${new Date().getTime()}.jpg`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        
-                        showStatus(`Snapshot captured successfully from camera ${cameraId}`, 'success');
-                    }, 'image/jpeg', 0.9);
+                    // Refresh camera list to get updated info
+                    await loadCameras();
+                    
                 } else {
-                    throw new Error('No active video stream to capture. Please start the stream first.');
+                    throw new Error(data.error || 'Failed to change streaming mode');
                 }
                 
             } catch (error) {
-                showStatus(`Failed to capture snapshot from camera ${cameraId}: ${error.message}`, 'error');
+                showStatus(`Failed to change streaming mode for camera ${cameraId}: ${error.message}`, 'error');
+                console.error('Error changing streaming mode:', error);
             }
         }
 
@@ -840,23 +1006,267 @@
             }
         }
 
-        // Render error state
-        function renderErrorState() {
-            const grid = document.getElementById('camera-grid');
-            grid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
-                    <h3 style="color: #ef4444;">⚠️ Connection Error</h3>
-                    <p>Unable to connect to the camera service. Please check:</p>
-                    <ul style="text-align: left; display: inline-block; margin: 1rem 0;">
-                        <li>FastAPI server is running on ${API_BASE}</li>
-                        <li>Network connection is stable</li>
-                        <li>Camera service is properly configured</li>
-                    </ul>
-                    <button class="btn btn-primary" onclick="refreshCameras()" style="margin-top: 1rem;">
-                        🔄 Retry Connection
-                    </button>
-                </div>
-            `;
+        // Open fullscreen view for a camera
+        async function openFullscreenView(cameraId) {
+            try {
+                // Get camera data
+                const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                if (!camera) {
+                    showStatus(`Camera ${cameraId} not found`, 'error');
+                    return;
+                }
+
+                const cameraName = camera.name || `Camera ${cameraId}`;
+                const currentMode = camera.streaming_mode || 'live';
+                
+                // Create fullscreen modal
+                const modal = document.createElement('div');
+                modal.id = 'fullscreen-modal';
+                modal.innerHTML = `
+                    <div class="fullscreen-overlay" onclick="closeFullscreenView()">
+                        <div class="fullscreen-content" onclick="event.stopPropagation()">
+                            <div class="fullscreen-header">
+                                <div class="fullscreen-title">
+                                    📹 ${cameraName}
+                                    <span class="camera-status ${getStatusClass(camera.status || 'offline')}">
+                                        ${camera.status?.toUpperCase() || 'OFFLINE'}
+                                    </span>
+                                </div>
+                                <button class="close-btn" onclick="closeFullscreenView()">✕</button>
+                            </div>
+                            <div class="fullscreen-video-container" id="fullscreen-video-container">
+                                <div class="fullscreen-placeholder">
+                                    <div>📺</div>
+                                    <p>Loading camera feed...</p>
+                                </div>
+                            </div>
+                            <div class="fullscreen-controls">
+                                <select id="fullscreen-mode-select" class="btn" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem;">
+                                    <option value="live" ${currentMode === 'live' ? 'selected' : ''}>⚡ Live (Fast)</option>
+                                    <option value="balanced" ${currentMode === 'balanced' ? 'selected' : ''}>⚖️ Balanced</option>
+                                    <option value="analysis" ${currentMode === 'analysis' ? 'selected' : ''}>🔍 Analysis</option>
+                                </select>
+                                <button class="btn btn-success" id="fullscreen-start-btn" onclick="startFullscreenStream('${cameraId}')">
+                                    ▶️ Start Stream
+                                </button>
+                                <button class="btn btn-danger" id="fullscreen-stop-btn" onclick="stopFullscreenStream('${cameraId}')" disabled>
+                                    ⏹️ Stop Stream
+                                </button>
+                                <button class="btn btn-primary" onclick="changeFullscreenStreamingMode('${cameraId}')">
+                                    🔄 Change Mode
+                                </button>
+                                <button class="btn btn-primary" onclick="captureFullscreenSnapshot('${cameraId}')">
+                                    📸 Snapshot
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Start stream automatically
+                await startFullscreenStream(cameraId);
+                
+            } catch (error) {
+                showStatus(`Failed to open fullscreen view: ${error.message}`, 'error');
+                console.error('Error opening fullscreen view:', error);
+            }
+        }
+
+        // Close fullscreen view
+        function closeFullscreenView() {
+            const modal = document.getElementById('fullscreen-modal');
+            if (modal) {
+                // Stop any active fullscreen stream
+                if (fullscreenPeerConnection) {
+                    fullscreenPeerConnection.close();
+                    fullscreenPeerConnection = null;
+                }
+                modal.remove();
+            }
+        }
+
+        // Start stream in fullscreen view
+        async function startFullscreenStream(cameraId) {
+            try {
+                const startBtn = document.getElementById('fullscreen-start-btn');
+                if (startBtn) startBtn.disabled = true;
+                
+                showStatus(`Starting fullscreen stream for camera ${cameraId}...`, 'info');
+                
+                // Get camera data
+                const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                if (!camera) {
+                    throw new Error(`Camera ${cameraId} not found`);
+                }
+                
+                if (camera.webrtc_url && camera.sessionId) {
+                    console.log(`Starting fullscreen WebRTC stream for camera ${cameraId}`);
+                    
+                    // Create peer connection for fullscreen view
+                    const pc = new RTCPeerConnection({
+                        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    });
+                    
+                    // Handle incoming stream
+                    pc.ontrack = (event) => {
+                        console.log(`Received fullscreen track for camera ${cameraId}:`, event.streams[0]);
+                        const video = document.createElement('video');
+                        video.srcObject = event.streams[0];
+                        video.autoplay = true;
+                        video.playsInline = true;
+                        video.muted = true;
+                        video.className = 'fullscreen-video-stream';
+                        video.style.width = '100%';
+                        video.style.height = '100%';
+                        video.style.objectFit = 'contain';
+                        
+                        const container = document.getElementById('fullscreen-video-container');
+                        if (container) {
+                            container.innerHTML = '';
+                            container.appendChild(video);
+                        }
+                        
+                        const stopBtn = document.getElementById('fullscreen-stop-btn');
+                        if (stopBtn) stopBtn.disabled = false;
+                        
+                        showStatus(`Fullscreen stream started for camera ${cameraId}`, 'success');
+                    };
+                    
+                    // Handle connection state changes
+                    pc.onconnectionstatechange = () => {
+                        console.log(`Fullscreen camera ${cameraId} connection state:`, pc.connectionState);
+                    };
+                    
+                    // Request stream
+                    const response = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/offer`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                    }
+                    
+                    const data = await response.json();
+                    if (!data.success) {
+                        throw new Error(data.error || 'Failed to get stream offer');
+                    }
+                    
+                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    
+                    // Send answer
+                    const answerResponse = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/answer`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sdp: answer.sdp, type: answer.type })
+                    });
+                    
+                    if (!answerResponse.ok) {
+                        throw new Error(`HTTP ${answerResponse.status}: ${await answerResponse.text()}`);
+                    }
+                    
+                    const answerData = await answerResponse.json();
+                    if (!answerData.success) {
+                        throw new Error(answerData.error || 'Failed to process answer');
+                    }
+                    
+                    // Store fullscreen connection
+                    fullscreenPeerConnection = pc;
+                    
+                } else {
+                    throw new Error(`No WebRTC stream available for camera ${cameraId}`);
+                }
+                
+            } catch (error) {
+                showStatus(`Failed to start fullscreen stream: ${error.message}`, 'error');
+                const startBtn = document.getElementById('fullscreen-start-btn');
+                if (startBtn) startBtn.disabled = false;
+                console.error('Error starting fullscreen stream:', error);
+            }
+        }
+
+        // Stop fullscreen stream
+        async function stopFullscreenStream(cameraId) {
+            try {
+                if (fullscreenPeerConnection) {
+                    fullscreenPeerConnection.close();
+                    fullscreenPeerConnection = null;
+                    
+                    // Clean up UI
+                    const container = document.getElementById('fullscreen-video-container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="fullscreen-placeholder">
+                                <div>📺</div>
+                                <p>Stream stopped</p>
+                            </div>
+                        `;
+                    }
+                    
+                    const startBtn = document.getElementById('fullscreen-start-btn');
+                    if (startBtn) startBtn.disabled = false;
+                    
+                    const stopBtn = document.getElementById('fullscreen-stop-btn');
+                    if (stopBtn) stopBtn.disabled = true;
+                    
+                    showStatus(`Fullscreen stream stopped for camera ${cameraId}`, 'success');
+                }
+            } catch (error) {
+                showStatus(`Failed to stop fullscreen stream: ${error.message}`, 'error');
+                console.error('Error stopping fullscreen stream:', error);
+            }
+        }
+
+                // Change streaming mode in fullscreen view
+        async function changeFullscreenStreamingMode(cameraId) {
+            try {
+                const modeSelect = document.getElementById('fullscreen-mode-select');
+                const selectedMode = modeSelect.value;
+                
+                showStatus(`Changing fullscreen streaming mode for camera ${cameraId} to ${selectedMode}...`, 'info');
+                
+                // Stop existing fullscreen stream
+                await stopFullscreenStream(cameraId);
+                
+                // Call API to change mode
+                const response = await fetch(`${API_BASE}/api/cameras/${cameraId}/stream/mode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        streaming_mode: selectedMode
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus(`Fullscreen streaming mode changed to ${selectedMode} for camera ${cameraId}`, 'success');
+                    
+                    // Update camera data
+                    const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                    if (camera) {
+                        camera.streaming_mode = selectedMode;
+                        camera.analysis_enabled = selectedMode !== 'live';
+                    }
+                    
+                    // Refresh camera list and restart stream
+                    await loadCameras();
+                    await startFullscreenStream(cameraId);
+                    
+                } else {
+                    throw new Error(data.error || 'Failed to change fullscreen streaming mode');
+                }
+                
+            } catch (error) {
+                showStatus(`Failed to change fullscreen streaming mode: ${error.message}`, 'error');
+                console.error('Error changing fullscreen streaming mode:', error);
+            }
         }
 
         // Initialize the dashboard
@@ -866,6 +1276,13 @@
             
             // Update uptime every second
             setInterval(updateUptime, 1000);
+            
+            // Refresh tracking stats every 3 seconds
+            setInterval(() => {
+                if (document.visibilityState === 'visible') {
+                    updateTrackingStats();
+                }
+            }, 3000);
             
             // Refresh cameras every 30 seconds
             setInterval(() => {
@@ -887,6 +1304,9 @@
             Object.values(peerConnections).forEach(connection => {
                 connection.pc.close();
             });
+            if (fullscreenPeerConnection) {
+                fullscreenPeerConnection.close();
+            }
         });
 
         // Start the dashboard when page loads

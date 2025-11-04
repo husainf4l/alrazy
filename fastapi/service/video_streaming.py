@@ -20,6 +20,14 @@ from av import VideoFrame
 import threading
 import time
 
+# YOLO import
+try:
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+except ImportError:
+    YOLO_AVAILABLE = False
+    logging.warning("YOLO not available, falling back to OpenCV HOG detection")
+
 # Comprehensive H.264/FFmpeg error suppression to prevent system hang
 os.environ['OPENCV_LOG_LEVEL'] = 'FATAL'  # Only show fatal errors
 os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'  # Disable video I/O debug
@@ -213,7 +221,7 @@ logging.getLogger('opencv').addFilter(h264_filter)
 class RTSPVideoTrack(VideoStreamTrack):
     """Custom video track that reads from RTSP stream using OpenCV and analyzes frames."""
     
-    def __init__(self, rtsp_url: str, enable_analysis: bool = True, executor: ThreadPoolExecutor = None):
+    def __init__(self, rtsp_url: str, enable_analysis: bool = True, streaming_mode: str = "balanced"):
         super().__init__()
         self.rtsp_url = rtsp_url
         self.cap = None
@@ -224,105 +232,103 @@ class RTSPVideoTrack(VideoStreamTrack):
         # Initialize required attributes for VideoStreamTrack
         self._start = None
         
+        # Streaming mode: "live" (no analysis, max speed), "balanced" (light analysis), "analysis" (full analysis)
+        self.streaming_mode = streaming_mode
+        self.enable_analysis = enable_analysis and streaming_mode != "live"
+        
         # Thread pool for blocking operations
-        self.executor = executor or ThreadPoolExecutor(
+        self.executor = ThreadPoolExecutor(
             max_workers=config.THREAD_POOL_MAX_WORKERS, 
             thread_name_prefix="rtsp_video"
         )
+        
+        # Async analysis queue for non-blocking analysis
+        self.analysis_queue = asyncio.Queue(maxsize=10)
+        self.analysis_task = None
         
         # Connection state
         self._connection_lock = asyncio.Lock()
         self._is_connected = False
         
         # Analysis settings
-        self.enable_analysis = enable_analysis
         self.analysis_frame_count = 0
         self.last_analysis_results = {}
         
         # Frame skip counter for performance
         self._frame_skip_counter = 0
-        self._frame_skip_interval = config.FRAME_SKIP_INTERVAL
+        if streaming_mode == "live":
+            self._frame_skip_interval = 1  # Process every frame for live streaming
+        elif streaming_mode == "balanced":
+            self._frame_skip_interval = 2  # Process every 2nd frame
+        else:  # analysis mode
+            self._frame_skip_interval = 5  # Process every 5th frame
         
         # Add time-based frame rate limiting
         self._last_frame_time = 0
-        self._min_frame_interval = 1.0 / config.TARGET_FPS  # Minimum time between frames
+        if streaming_mode == "live":
+            self._min_frame_interval = 1.0 / 60  # Allow up to 60 FPS for live streaming (no artificial limit)
+        else:
+            self._min_frame_interval = 1.0 / 20  # Allow up to 20 FPS for analyzed streaming
         
-        # Initialize OpenCV analysis components
+        # Initialize OpenCV analysis components only if needed
         if self.enable_analysis:
             self._init_analysis_models()
+        
+        # Start async analysis task if analysis is enabled
+        if self.enable_analysis:
+            self.analysis_task = asyncio.create_task(self._async_analysis_worker())
         
         # Log OpenCV info at startup for diagnostics
         self.log_opencv_info()
     
     def log_opencv_info(self):
-        """Log OpenCV version, build info, and backend/capabilities for diagnostics."""
+        """Log OpenCV version for diagnostics."""
         try:
             import cv2
             logger.info(f"OpenCV version: {cv2.__version__}")
-            try:
-                build_info = cv2.getBuildInformation()
-                logger.info(f"OpenCV build info:\n{build_info}")
-            except Exception as e:
-                logger.warning(f"Could not get OpenCV build info: {e}")
-            try:
-                backends = cv2.videoio_registry.getBackends()
-                logger.info(f"Available OpenCV video backends: {backends}")
-            except Exception as e:
-                logger.warning(f"Could not get OpenCV video backends: {e}")
-            try:
-                codecs = cv2.videoio_registry.getCameraBackends()
-                logger.info(f"Available OpenCV camera backends: {codecs}")
-            except Exception as e:
-                logger.warning(f"Could not get OpenCV camera backends: {e}")
         except Exception as e:
             logger.error(f"Error logging OpenCV info: {e}")
     
     def _init_analysis_models(self):
-        """Initialize OpenCV analysis models with GPU acceleration."""
+        """Initialize YOLO for ultra-fast object detection with tracking."""
         try:
-            # Check for GPU support
-            try:
-                gpu_count = cv2.cuda.getCudaEnabledDeviceCount()
-                if gpu_count > 0:
-                    logger.info(f"CUDA-enabled OpenCV detected with {gpu_count} GPU(s)")
-                    self.use_gpu = True
-                else:
-                    logger.info("No CUDA support detected, using CPU")
-                    self.use_gpu = False
-            except:
-                logger.info("OpenCV compiled without CUDA, using CPU")
-                self.use_gpu = False
-            
-            # Initialize background subtractor for motion detection (optimized for night vision)
-            self.background_subtractor = cv2.createBackgroundSubtractorMOG2(
-                detectShadows=False,  # Disable shadows for better performance
-                varThreshold=150,     # Higher threshold for noisy night vision
-                history=200           # Longer history for stable night background
-            )
-            
-            # Initialize HOG descriptor for person detection
-            self.hog = cv2.HOGDescriptor()
-            self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-            
-            # Initialize face cascade classifier with optimized settings
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            )
+            # Initialize YOLO model for person detection (fastest available)
+            if YOLO_AVAILABLE:
+                try:
+                    # Use YOLOv8 nano model for fastest inference with tracking
+                    self.yolo_model = YOLO('yolov8n.pt')
+                    self.use_yolo = True
+                    
+                    # Initialize tracking state
+                    self.track_history = {}  # Store tracking history for each person
+                    self.person_count_history = []  # Track people count over time
+                    self.current_tracked_ids = set()  # Currently tracked person IDs
+                    
+                    logger.info("✅ YOLOv8n (nano) model loaded successfully with tracking enabled")
+                except Exception as yolo_error:
+                    logger.error(f"Failed to load YOLO model: {yolo_error}")
+                    self.use_yolo = False
+                    self.yolo_model = None
+            else:
+                logger.warning("YOLO not available - analysis disabled for maximum speed")
+                self.use_yolo = False
+                self.yolo_model = None
             
             # Analysis counters
             self.motion_detected = False
             self.people_count = 0
-            self.faces_count = 0
+            self.tracked_people_count = 0  # Count of uniquely tracked people
             
-            logger.info(f"OpenCV analysis models initialized successfully (GPU: {self.use_gpu})")
+            logger.info(f"Analysis models initialized (YOLO: {self.use_yolo}, Tracking: {self.use_yolo})")
             
         except Exception as e:
             logger.error(f"Failed to initialize analysis models: {e}")
             self.enable_analysis = False
-            self.use_gpu = False
+            self.use_yolo = False
+            self.yolo_model = None
         
     async def recv(self):
-        """Receive the next video frame with OpenCV analysis."""
+        """Receive the next video frame with optimized streaming based on mode."""
         try:
             # Time-based frame rate limiting
             import time
@@ -351,16 +357,21 @@ class RTSPVideoTrack(VideoStreamTrack):
                     self._consecutive_failures = getattr(self, '_consecutive_failures', 0) + 1
                     return self._generate_test_frame()
             
-            # Implement frame skipping for better performance
-            self._frame_skip_counter += 1
-            if self._frame_skip_counter < self._frame_skip_interval:
-                # Return previous frame to maintain framerate but reduce processing
-                if hasattr(self, '_last_frame') and self._last_frame is not None:
-                    return self._create_av_frame(self._last_frame)
-                else:
-                    return self._generate_test_frame()
-            
-            self._frame_skip_counter = 0  # Reset counter
+            # For live streaming, minimize frame skipping and processing overhead
+            if self.streaming_mode == "live":
+                # Live mode: direct streaming with minimal overhead
+                pass  # No frame skipping for live mode
+            else:
+                # Implement frame skipping for analysis modes
+                self._frame_skip_counter += 1
+                if self._frame_skip_counter < self._frame_skip_interval:
+                    # Return previous frame to maintain framerate but reduce processing
+                    if hasattr(self, '_last_frame') and self._last_frame is not None:
+                        return self._create_av_frame(self._last_frame)
+                    else:
+                        return self._generate_test_frame()
+                
+                self._frame_skip_counter = 0  # Reset counter
             
             # Read frame in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -390,13 +401,26 @@ class RTSPVideoTrack(VideoStreamTrack):
             # Store frame for potential reuse
             self._last_frame = frame_data.copy()
             
-            # Perform OpenCV analysis on the frame (in BGR format) - run in thread pool
-            if self.enable_analysis:
-                frame_data = await loop.run_in_executor(
-                    self.executor,
-                    self._analyze_frame,
-                    frame_data
-                )
+            # Handle analysis based on streaming mode
+            if self.streaming_mode == "live":
+                # Live mode: no analysis, direct streaming for maximum speed
+                pass
+            elif self.enable_analysis:
+                # Queue frame for async analysis (non-blocking) with timeout to prevent blocking
+                try:
+                    await asyncio.wait_for(
+                        self.analysis_queue.put(frame_data.copy()), 
+                        timeout=0.001  # Very short timeout to prevent blocking
+                    )
+                except asyncio.TimeoutError:
+                    # Queue is full or would block, skip analysis for this frame to maintain streaming speed
+                    pass
+            
+            # Log successful frame processing (less frequent for live mode)
+            log_interval = 100 if self.streaming_mode == "live" else 50
+            if self.analysis_frame_count % log_interval == 0:
+                mode_name = "live streaming" if self.streaming_mode == "live" else "analyzed streaming"
+                logger.info(f"Successfully processed frame {self.analysis_frame_count} for {mode_name}")
             
             return self._create_av_frame(frame_data)
             
@@ -475,167 +499,114 @@ class RTSPVideoTrack(VideoStreamTrack):
         return av_frame
     
     def _analyze_frame(self, frame):
-        """Analyze frame with OpenCV and overlay results."""
+        """Analyze frame with YOLO for ultra-fast person detection and tracking."""
         try:
             self.analysis_frame_count += 1
             analyzed_frame = frame.copy()
             
-            # Only analyze every 30th frame for much better performance and stability
+            # Only analyze periodically for performance
             if self.analysis_frame_count % config.ANALYSIS_FRAME_INTERVAL == 0:
-                # Motion detection optimized for night vision
-                try:
-                    # Pre-process frame for better night vision motion detection
-                    motion_frame = frame.copy()
-                    
-                    # Check if this looks like night vision footage
-                    frame_mean = np.mean(motion_frame)
-                    if frame_mean < 80:  # Likely night vision
-                        # Apply gentle enhancement for motion detection
-                        motion_frame = cv2.convertScaleAbs(motion_frame, alpha=1.2, beta=10)
-                        logger.debug("Applied night vision enhancement for motion detection")
-                    
-                    motion_mask = self.background_subtractor.apply(motion_frame)
-                    
-                    # Apply morphological operations to reduce noise in motion detection
-                    kernel = np.ones((3,3), np.uint8)
-                    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, kernel)
-                    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_CLOSE, kernel)
-                    
-                    motion_pixels = cv2.countNonZero(motion_mask)
-                    # Adjust motion threshold for night vision (higher due to noise)
-                    motion_threshold = config.MOTION_THRESHOLD * 1.5 if frame_mean < 80 else config.MOTION_THRESHOLD
-                    self.motion_detected = motion_pixels > motion_threshold
-                    
-                except Exception as motion_error:
-                    logger.debug(f"Motion detection error (non-fatal): {motion_error}")
-                    # Fallback to simple motion detection
-                    motion_mask = self.background_subtractor.apply(frame)
-                    motion_pixels = cv2.countNonZero(motion_mask)
-                    self.motion_detected = motion_pixels > config.MOTION_THRESHOLD
-                
-                # Person detection (much less frequent for performance, optimized for night vision)
-                if self.analysis_frame_count % config.DETECTION_FRAME_INTERVAL == 0:
+                # Person detection and tracking using YOLO (super fast)
+                if self.use_yolo and self.yolo_model:
                     try:
-                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        # Run YOLO inference with tracking - optimized for speed
+                        # track() method automatically assigns unique IDs to detected persons
+                        results = self.yolo_model.track(
+                            frame, 
+                            persist=True,  # Keep tracking across frames
+                            conf=0.4,  # Confidence threshold
+                            classes=[0],  # class 0 = person
+                            verbose=False,  # Suppress output
+                            tracker="bytetrack.yaml"  # Use ByteTrack for fast tracking
+                        )
                         
-                        # Apply gentle denoising for night vision footage
-                        try:
-                            # Check if frame is likely night vision (low brightness, high noise)
-                            frame_mean = np.mean(gray)
-                            frame_std = np.std(gray)
+                        # Extract tracked person detections
+                        tracked_people = []
+                        current_frame_ids = set()
+                        
+                        if len(results) > 0 and results[0].boxes is not None and len(results[0].boxes) > 0:
+                            boxes = results[0].boxes
                             
-                            if frame_mean < 80 and frame_std > 30:  # Likely night vision
-                                # Apply light denoising
-                                gray = cv2.bilateralFilter(gray, 5, 20, 20)
-                                logger.debug("Applied denoising for night vision analysis")
-                        except:
-                            pass  # Continue without denoising if it fails
+                            for box in boxes:
+                                # Get bounding box coordinates
+                                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                                conf = float(box.conf[0].cpu().numpy())
+                                
+                                # Get tracking ID if available
+                                track_id = None
+                                if box.id is not None:
+                                    track_id = int(box.id[0].cpu().numpy())
+                                    current_frame_ids.add(track_id)
+                                    
+                                    # Store tracking history
+                                    if track_id not in self.track_history:
+                                        self.track_history[track_id] = []
+                                    
+                                    # Store center point for trajectory
+                                    center_x = int((x1 + x2) / 2)
+                                    center_y = int((y1 + y2) / 2)
+                                    self.track_history[track_id].append((center_x, center_y))
+                                    
+                                    # Keep only last 30 points for trajectory
+                                    if len(self.track_history[track_id]) > 30:
+                                        self.track_history[track_id] = self.track_history[track_id][-30:]
+                                
+                                tracked_people.append({
+                                    'box': [int(x1), int(y1), int(x2), int(y2)],
+                                    'conf': conf,
+                                    'id': track_id
+                                })
                         
-                        # Reduce image size more aggressively for faster processing
-                        height, width = gray.shape
-                        max_dimension = max(height, width)
+                        # Update people count and tracked IDs
+                        self.people_count = len(tracked_people)
+                        self.current_tracked_ids = current_frame_ids
+                        self.tracked_people_count = len(self.track_history)  # Total unique people tracked
                         
-                        if max_dimension > 512:  # More aggressive scaling
-                            scale_factor = 512.0 / max_dimension
-                            new_width = int(width * scale_factor)
-                            new_height = int(height * scale_factor)
-                            small_gray = cv2.resize(gray, (new_width, new_height))
-                        else:
-                            small_gray = gray
-                            scale_factor = 1.0
+                        # Draw tracked people with IDs and trajectories
+                        for person in tracked_people[:10]:  # Limit to 10 for performance
+                            x1, y1, x2, y2 = person['box']
+                            track_id = person['id']
+                            conf = person['conf']
+                            
+                            # Draw bounding box
+                            color = (0, 255, 0)  # Green for tracked
+                            cv2.rectangle(analyzed_frame, (x1, y1), (x2, y2), color, 2)
+                            
+                            # Draw tracking ID and confidence
+                            if track_id is not None:
+                                label = f"ID:{track_id} {conf:.2f}"
+                                cv2.putText(analyzed_frame, label, (x1, y1 - 10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                                
+                                # Draw trajectory
+                                if track_id in self.track_history and len(self.track_history[track_id]) > 1:
+                                    points = self.track_history[track_id]
+                                    for i in range(1, len(points)):
+                                        # Draw line between consecutive points
+                                        cv2.line(analyzed_frame, points[i-1], points[i], (0, 255, 255), 2)
                         
-                        # Detect people using HOG with very conservative parameters
-                        people, _ = self.hog.detectMultiScale(
-                            small_gray, 
-                            winStride=(32, 32),  # Larger stride for better performance
-                            padding=(64, 64),    # Larger padding
-                            scale=1.2            # Larger scale steps
-                        )
+                        # Store people count in history for trend analysis
+                        self.person_count_history.append(self.people_count)
+                        if len(self.person_count_history) > 100:  # Keep last 100 counts
+                            self.person_count_history = self.person_count_history[-100:]
                         
-                        # Debug: Log the type and shape of the detection result
-                        logger.debug(f"People detection result type: {type(people)}, shape: {getattr(people, 'shape', 'N/A')}")
-                        
-                        # Convert to numpy array if it's a tuple or ensure it's an array
-                        if isinstance(people, tuple):
-                            people = np.array(people)
-                        elif not isinstance(people, np.ndarray):
-                            people = np.array(people)
-                        
-                        # Ensure it's a proper array and handle empty case
-                        if people.size == 0:
-                            people = np.empty((0, 4), dtype=int)
-                        
-                        # Scale coordinates back up if we downscaled
-                        if scale_factor < 1.0 and len(people) > 0 and people.size > 0:
-                            try:
-                                people = people.astype(float)
-                                people[:, [0, 2]] = people[:, [0, 2]] / scale_factor  # x, width
-                                people[:, [1, 3]] = people[:, [1, 3]] / scale_factor  # y, height
-                                people = people.astype(int)
-                            except Exception as scale_error:
-                                logger.warning(f"Error scaling people detections: {scale_error}")
-                                people = np.empty((0, 4), dtype=int)
-                        
-                        self.people_count = len(people)
-                        
-                        # Draw rectangles around detected people (limit to 3 for performance)
-                        for (x, y, w, h) in people[:3]:
-                            cv2.rectangle(analyzed_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                            cv2.putText(analyzed_frame, 'Person', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        
-                        # Face detection with safe parameters
-                        faces = self.face_cascade.detectMultiScale(
-                            small_gray, 
-                            scaleFactor=1.3, 
-                            minNeighbors=4,
-                            minSize=(40, 40)  # Larger minimum size for better detection
-                        )
-                        
-                        # Debug: Log the type and shape of the detection result
-                        logger.debug(f"Face detection result type: {type(faces)}, shape: {getattr(faces, 'shape', 'N/A')}")
-                        
-                        # Convert to numpy array if it's a tuple or ensure it's an array
-                        if isinstance(faces, tuple):
-                            faces = np.array(faces)
-                        elif not isinstance(faces, np.ndarray):
-                            faces = np.array(faces)
-                        
-                        # Ensure it's a proper array and handle empty case
-                        if faces.size == 0:
-                            faces = np.empty((0, 4), dtype=int)
-                        
-                        # Scale coordinates back up if we downscaled
-                        if scale_factor < 1.0 and len(faces) > 0 and faces.size > 0:
-                            try:
-                                faces = faces.astype(float)
-                                faces[:, [0, 2]] = faces[:, [0, 2]] / scale_factor  # x, width
-                                faces[:, [1, 3]] = faces[:, [1, 3]] / scale_factor  # y, height
-                                faces = faces.astype(int)
-                            except Exception as scale_error:
-                                logger.warning(f"Error scaling face detections: {scale_error}")
-                                faces = np.empty((0, 4), dtype=int)
-                        
-                        self.faces_count = len(faces)
-                        
-                        # Draw rectangles around detected faces (limit to 3 for performance)
-                        for (x, y, w, h) in faces[:3]:
-                            cv2.rectangle(analyzed_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                            cv2.putText(analyzed_frame, 'Face', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                    
-                    except Exception as detection_error:
-                        logger.warning(f"Detection error (non-fatal): {detection_error}")
-                        # Continue with motion detection only
+                    except Exception as yolo_error:
+                        logger.debug(f"YOLO tracking error: {yolo_error}")
+                        self.people_count = 0
+                        self.tracked_people_count = 0
                 
-                # Update analysis results
+                # Update analysis results with tracking info
                 self.last_analysis_results = {
-                    "motion_detected": self.motion_detected,
                     "people_count": self.people_count,
-                    "faces_count": self.faces_count,
-                    "timestamp": self.analysis_frame_count
+                    "tracked_people_count": self.tracked_people_count,
+                    "current_ids": list(self.current_tracked_ids),
+                    "timestamp": self.analysis_frame_count,
+                    "avg_people_count": sum(self.person_count_history) / len(self.person_count_history) if self.person_count_history else 0
                 }
             
-            # Draw analysis overlay (lighter version)
-            self._draw_analysis_overlay(analyzed_frame)
+            # Draw analysis overlay with tracking info
+            if self.people_count > 0 or self.tracked_people_count > 0:
+                self._draw_analysis_overlay(analyzed_frame)
             
             return analyzed_frame
             
@@ -644,51 +615,104 @@ class RTSPVideoTrack(VideoStreamTrack):
             return frame
     
     def _draw_analysis_overlay(self, frame):
-        """Draw analysis information overlay on frame."""
+        """Draw analysis information overlay on frame with people count and tracking stats."""
         try:
-            # Create overlay background
-            overlay = frame.copy()
             h, w = frame.shape[:2]
             
-            # Draw semi-transparent overlay for text background
-            cv2.rectangle(overlay, (10, 10), (300, 120), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+            # Draw large people count in top center if people detected
+            if self.people_count > 0:
+                people_text = f"👥 {self.people_count} {'Person' if self.people_count == 1 else 'People'}"
+                
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.5
+                thickness = 3
+                (text_width, text_height), _ = cv2.getTextSize(people_text, font, font_scale, thickness)
+                
+                # Position in top center
+                x = (w - text_width) // 2
+                y = 60
+                
+                # Draw background rectangle
+                cv2.rectangle(frame, (x - 10, y - text_height - 10), (x + text_width + 10, y + 10), (0, 0, 0), -1)
+                cv2.rectangle(frame, (x - 10, y - text_height - 10), (x + text_width + 10, y + 10), (0, 255, 0), 2)
+                
+                # Draw people count text
+                cv2.putText(frame, people_text, (x, y), font, font_scale, (0, 255, 0), thickness)
             
-            # Draw analysis information
-            y_offset = 30
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.6
-            color = (255, 255, 255)
-            thickness = 1
-            
-            # Motion status
-            motion_text = f"Motion: {'DETECTED' if self.motion_detected else 'None'}"
-            motion_color = (0, 255, 0) if self.motion_detected else (128, 128, 128)
-            cv2.putText(frame, motion_text, (15, y_offset), font, font_scale, motion_color, thickness)
-            y_offset += 25
-            
-            # People count
-            people_text = f"People: {self.people_count}"
-            people_color = (0, 255, 0) if self.people_count > 0 else (128, 128, 128)
-            cv2.putText(frame, people_text, (15, y_offset), font, font_scale, people_color, thickness)
-            y_offset += 25
-            
-            # Face count
-            faces_text = f"Faces: {self.faces_count}"
-            faces_color = (255, 0, 0) if self.faces_count > 0 else (128, 128, 128)
-            cv2.putText(frame, faces_text, (15, y_offset), font, font_scale, faces_color, thickness)
-            y_offset += 25
-            
-            # Frame counter
-            frame_text = f"Frame: {self.analysis_frame_count}"
-            cv2.putText(frame, frame_text, (15, y_offset), font, font_scale, color, thickness)
+            # Draw tracking statistics in top right corner
+            if self.tracked_people_count > 0:
+                stats_text = [
+                    f"Tracked: {self.tracked_people_count}",
+                    f"Active: {len(self.current_tracked_ids)}"
+                ]
+                
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6
+                thickness = 2
+                
+                # Calculate background size
+                max_width = max([cv2.getTextSize(text, font, font_scale, thickness)[0][0] for text in stats_text])
+                bg_height = 20 * len(stats_text) + 20
+                
+                # Draw background
+                cv2.rectangle(frame, (w - max_width - 30, 10), (w - 10, 10 + bg_height), (0, 0, 0), -1)
+                cv2.rectangle(frame, (w - max_width - 30, 10), (w - 10, 10 + bg_height), (0, 255, 255), 2)
+                
+                # Draw stats
+                y_offset = 30
+                for text in stats_text:
+                    cv2.putText(frame, text, (w - max_width - 20, y_offset), 
+                              font, font_scale, (0, 255, 255), thickness)
+                    y_offset += 20
             
         except Exception as e:
             logger.error(f"Error drawing overlay: {e}")
     
-    def get_analysis_results(self):
-        """Get current analysis results."""
-        return self.last_analysis_results
+    async def _async_analysis_worker(self):
+        """Async worker that processes frames for analysis without blocking streaming."""
+        logger.info("Started async analysis worker")
+        
+        while True:
+            try:
+                # Get frame from queue with timeout to prevent blocking
+                try:
+                    frame_data = await asyncio.wait_for(
+                        self.analysis_queue.get(), 
+                        timeout=0.1
+                    )
+                except asyncio.TimeoutError:
+                    continue  # No frame available, continue loop
+                
+                # Process frame in thread pool (non-blocking for WebRTC)
+                loop = asyncio.get_event_loop()
+                analyzed_frame = await loop.run_in_executor(
+                    self.executor,
+                    self._analyze_frame,
+                    frame_data
+                )
+                
+                # Update analysis results
+                self.analysis_frame_count += 1
+                
+                # Mark task as done
+                self.analysis_queue.task_done()
+                
+            except Exception as e:
+                logger.error(f"Error in async analysis worker: {e}")
+                await asyncio.sleep(0.01)  # Brief pause on error
+    
+    def stop(self):
+        """Stop the video track and cleanup resources."""
+        if self.analysis_task and not self.analysis_task.done():
+            self.analysis_task.cancel()
+        
+        if self.cap:
+            try:
+                self.cap.release()
+            except:
+                pass
+        
+        super().stop()
     
     async def _check_connection(self) -> bool:
         """Check if RTSP connection is still active."""
@@ -770,7 +794,7 @@ class RTSPVideoTrack(VideoStreamTrack):
                     
                 if cap.isOpened():
                     # Configure essential settings
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, config.RTSP_BUFFER_SIZE)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Increased buffer for stability
                     cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, config.RTSP_TIMEOUT_MS)
                     cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, config.RTSP_TIMEOUT_MS)
                     
@@ -950,7 +974,7 @@ class RTSPVideoTrack(VideoStreamTrack):
             if cap.isOpened():
                 try:
                     # Essential settings for RTSP stability and H.264 error recovery
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer to reduce latency
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Increased buffer for stability
                     cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, config.RTSP_TIMEOUT_MS)
                     cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, config.RTSP_TIMEOUT_MS)
                     
@@ -1005,10 +1029,10 @@ class VideoStreamingService:
         self.base_url = config.get_fastapi_base_url()
         self._auto_recovery_started = False
     
-    async def create_webrtc_offer(self, camera_id: str, rtsp_url: str) -> Dict[str, Any]:
-        """Create WebRTC offer for a camera stream."""
+    async def create_webrtc_offer(self, camera_id: str, rtsp_url: str, streaming_mode: str = "balanced") -> Dict[str, Any]:
+        """Create WebRTC offer for a camera stream with specified streaming mode."""
         try:
-            logger.info(f"Creating WebRTC offer for camera {camera_id} with RTSP URL: {rtsp_url}")
+            logger.info(f"Creating WebRTC offer for camera {camera_id} with RTSP URL: {rtsp_url} (mode: {streaming_mode})")
             
             # Clean up any closed connections first
             await self._cleanup_closed_connections()
@@ -1046,8 +1070,9 @@ class VideoStreamingService:
             async def on_icegatheringstatechange():
                 logger.info(f"ICE gathering state is {pc.iceGatheringState} for session {session_id}")
             
-            # Create video track from RTSP stream with OpenCV analysis enabled
-            video_track = RTSPVideoTrack(rtsp_url, enable_analysis=True)
+            # Create video track from RTSP stream with specified streaming mode
+            enable_analysis = streaming_mode != "live"
+            video_track = RTSPVideoTrack(rtsp_url, enable_analysis=enable_analysis, streaming_mode=streaming_mode)
             pc.addTrack(video_track)
             
             # Store references
@@ -1058,7 +1083,7 @@ class VideoStreamingService:
             offer = await pc.createOffer()
             await pc.setLocalDescription(offer)
             
-            logger.info(f"Created WebRTC offer for camera {camera_id}, session {session_id}")
+            logger.info(f"Created WebRTC offer for camera {camera_id}, session {session_id} (mode: {streaming_mode})")
             
             return {
                 "session_id": session_id,
@@ -1066,6 +1091,8 @@ class VideoStreamingService:
                     "type": offer.type,
                     "sdp": offer.sdp
                 },
+                "streaming_mode": streaming_mode,
+                "analysis_enabled": enable_analysis,
                 "success": True
             }
             
@@ -1449,12 +1476,12 @@ class VideoStreamingService:
         asyncio.create_task(auto_recovery_loop())
         logger.info("Auto-recovery task started")
     
-    async def create_analyzed_webrtc_stream(self, camera_id: str) -> Dict[str, Any]:
+    async def create_analyzed_webrtc_stream(self, camera_id: str, streaming_mode: str = "balanced") -> Dict[str, Any]:
         """
-        Complete flow: Get RTSP -> Analyze with OpenCV -> Create WebRTC -> Update Camera
+        Complete flow: Get RTSP -> Create WebRTC stream with specified mode -> Update Camera
         """
         try:
-            logger.info(f"Starting complete analyzed WebRTC flow for camera {camera_id}")
+            logger.info(f"Starting WebRTC flow for camera {camera_id} (mode: {streaming_mode})")
             
             # Step 1: Get RTSP URL from standalone camera database
             from service.cameras import camera_service
@@ -1468,8 +1495,8 @@ class VideoStreamingService:
             
             logger.info(f"Retrieved RTSP URL for camera {camera_id}: {rtsp_url}")
             
-            # Step 2: Create WebRTC stream with OpenCV analysis
-            webrtc_result = await self.create_webrtc_offer(camera_id, rtsp_url)
+            # Step 2: Create WebRTC stream with specified streaming mode
+            webrtc_result = await self.create_webrtc_offer(camera_id, rtsp_url, streaming_mode)
             
             if not webrtc_result["success"]:
                 return {
@@ -1482,21 +1509,29 @@ class VideoStreamingService:
             # Step 3: Generate WebRTC URL
             webrtc_url = f"{self.base_url}/api/webrtc/stream/{session_id}"
             
-            # Step 4: Store persistent stream with analysis info
+            # Step 4: Store persistent stream with mode info
+            analysis_enabled = streaming_mode != "live"
             self.persistent_streams[camera_id] = {
                 "session_id": session_id,
                 "webrtc_url": webrtc_url,
                 "rtsp_url": rtsp_url,
                 "created_at": asyncio.get_event_loop().time(),
                 "status": "active",
-                "analysis_enabled": True,
+                "streaming_mode": streaming_mode,
+                "analysis_enabled": analysis_enabled,
                 "last_analysis": {}
             }
             
             # Step 5: Update camera in database with WebRTC URL
             update_result = self._update_camera_webrtc_url(camera_id, webrtc_url)
             
-            logger.info(f"Completed analyzed WebRTC flow for camera {camera_id}")
+            mode_description = {
+                "live": "ultra-fast live streaming (no analysis)",
+                "balanced": "balanced streaming with light analysis", 
+                "analysis": "full analysis streaming"
+            }.get(streaming_mode, "unknown mode")
+            
+            logger.info(f"Completed WebRTC flow for camera {camera_id} ({mode_description})")
             
             return {
                 "success": True,
@@ -1504,20 +1539,21 @@ class VideoStreamingService:
                 "session_id": session_id,
                 "rtsp_url": rtsp_url,
                 "webrtc_url": webrtc_url,
-                "analysis_enabled": True,
+                "streaming_mode": streaming_mode,
+                "analysis_enabled": analysis_enabled,
                 "database_updated": update_result["success"],
-                "message": "RTSP stream analyzed with OpenCV and WebRTC URL created",
+                "message": f"RTSP stream converted to WebRTC with {mode_description}",
                 "flow_steps": [
                     "✅ Retrieved RTSP URL from camera endpoint",
-                    "✅ Created WebRTC stream with OpenCV analysis",
+                    f"✅ Created WebRTC stream in {streaming_mode} mode",
                     "✅ Generated WebRTC URL endpoint", 
                     "✅ Updated camera database with WebRTC URL",
-                    "✅ Stream ready with real-time AI analysis"
+                    f"✅ Stream ready with {mode_description}"
                 ]
             }
             
         except Exception as e:
-            logger.error(f"Failed to create analyzed WebRTC stream for camera {camera_id}: {e}")
+            logger.error(f"Failed to create WebRTC stream for camera {camera_id}: {e}")
             return {
                 "success": False,
                 "error": str(e)
