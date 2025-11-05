@@ -50,6 +50,19 @@ except ImportError as e:
     EnhancedDetectionTracker = None
     ENHANCED_TRACKING_AVAILABLE = False
 
+# Person Re-Identification (persistent person labeling)
+try:
+    from reid.person_reidentifier import PersonReIdentifier
+    from reid.storage import PersonRedisStorage, CloudEmbeddingStorage
+    REID_AVAILABLE = True
+    print("✅ Person re-ID module loaded")
+except ImportError as e:
+    print(f"⚠️  Person re-ID not available: {e}. Running without re-ID.")
+    PersonReIdentifier = None
+    PersonRedisStorage = None
+    CloudEmbeddingStorage = None
+    REID_AVAILABLE = False
+
 # Configuration
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 ROOM_ID = os.environ.get("ROOM_ID", "room_safe")
@@ -58,12 +71,16 @@ YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 MAX_OCCUPANCY = int(os.environ.get("MAX_OCCUPANCY", "1"))
 VIOLATION_THRESHOLD = int(os.environ.get("VIOLATION_THRESHOLD", "2"))
 USE_ENHANCED_TRACKING = os.environ.get("USE_ENHANCED_TRACKING", "true").lower() in ["true", "1", "yes"]
+USE_PERSON_REID = os.environ.get("USE_PERSON_REID", "true").lower() in ["true", "1", "yes"]
+REID_SIMILARITY_THRESHOLD = float(os.environ.get("REID_SIMILARITY_THRESHOLD", "0.6"))
 
 # Global state
 redis_client = None
 yolo_model: Optional[Any] = None
 trackers: Dict[str, Any] = {}
 enhanced_trackers: Dict[str, Any] = {}  # For enhanced hybrid trackers
+person_reidentifiers: Dict[str, Any] = {}  # Per-camera re-ID instances
+person_storages: Dict[str, Any] = {}  # Per-camera storage instances
 
 # ByteTrack configuration parameters (for supervision 0.26.1+)
 TRACK_ACTIVATION_THRESHOLD = 0.4
@@ -79,6 +96,14 @@ ENHANCED_TRACK_CONFIG = {
     "n_init": 3,
     "confidence_threshold": 0.45,
     "nms_threshold": 0.5
+}
+
+# Person Re-ID configuration
+REID_CONFIG = {
+    "enabled": USE_PERSON_REID and REID_AVAILABLE,
+    "similarity_threshold": REID_SIMILARITY_THRESHOLD,
+    "cloud_storage": os.environ.get("CLOUD_STORAGE_TYPE", "local"),  # local, s3, gcs
+    "ttl_days": int(os.environ.get("REID_TTL_DAYS", "90"))
 }
 
 # ============= WebSocket Manager =============
@@ -251,6 +276,104 @@ def draw_boxes_on_image(
     
     return img_copy
 
+# ============= Person Re-ID Helpers =============
+def ensure_person_reidentifier(camera_id: str) -> Optional[Any]:
+    """Get or create person re-identifier for camera"""
+    if not REID_CONFIG["enabled"]:
+        return None
+    
+    if camera_id not in person_reidentifiers:
+        try:
+            reidentifier = PersonReIdentifier(
+                similarity_threshold=REID_CONFIG["similarity_threshold"]
+            )
+            person_reidentifiers[camera_id] = reidentifier
+            print(f"✅ Initialized person re-ID for {camera_id}")
+        except Exception as e:
+            print(f"⚠️  Failed to initialize person re-ID: {e}")
+            return None
+    
+    return person_reidentifiers[camera_id]
+
+def ensure_person_storage(camera_id: str) -> Optional[Any]:
+    """Get or create person storage for camera"""
+    if not REID_CONFIG["enabled"]:
+        return None
+    
+    if camera_id not in person_storages and redis_client:
+        try:
+            storage = PersonRedisStorage(
+                redis_client,
+                namespace=f"saferoom:persons:{camera_id}",
+                ttl_days=REID_CONFIG["ttl_days"]
+            )
+            person_storages[camera_id] = storage
+        except Exception as e:
+            print(f"⚠️  Failed to initialize person storage: {e}")
+            return None
+    
+    return person_storages.get(camera_id)
+
+def process_person_detection(
+    frame: np.ndarray,
+    bbox: List[int],
+    tracker_id: int,
+    camera_id: str
+) -> Optional[str]:
+    """
+    Process detection for person re-identification
+    Returns person label if matched, or creates new person
+    """
+    if not REID_CONFIG["enabled"]:
+        return None
+    
+    try:
+        reidentifier = ensure_person_reidentifier(camera_id)
+        storage = ensure_person_storage(camera_id)
+        
+        if not reidentifier or not storage:
+            return None
+        
+        # Extract embedding
+        embedding = reidentifier.extract_person_embedding(frame, tuple(bbox))
+        if embedding is None:
+            return None
+        
+        # Try to match with known persons
+        person_id, confidence = reidentifier.match_person(
+            embedding, camera_id, bbox
+        )
+        
+        if person_id and confidence > REID_CONFIG["similarity_threshold"]:
+            # Found matching person
+            label = reidentifier.persons[person_id].label
+            
+            # Update person info
+            reidentifier.update_person(
+                person_id, embedding, frame, bbox, camera_id, confidence
+            )
+            
+            # Update Redis storage
+            storage.update_last_seen(person_id, time.time())
+            storage.increment_visit_count(person_id)
+            
+            return label
+        else:
+            # New person
+            person_id = reidentifier.register_person(
+                embedding, frame, bbox, camera_id
+            )
+            
+            # Store in Redis
+            person_info = reidentifier.get_person_info(person_id)
+            storage.save_person(person_info)
+            
+            return reidentifier.persons[person_id].label
+    
+    except Exception as e:
+        print(f"⚠️  Person detection failed: {e}")
+        return None
+
 # ============= Violation Handler =============
 async def on_violation(occupants_ids: List[int], frame_b64: str = ""):
     """Handle violation: log event, trigger webhook, broadcast alert"""
@@ -325,6 +448,7 @@ async def ingest_frame(
         rects = []
         frame_b64_annotated = ""
         tracking_method = "none"
+        person_labels = {}  # Initialize person_labels outside YOLO block
         
         # Run YOLO if model is loaded
         if yolo_model is not None:
@@ -385,6 +509,19 @@ async def ingest_frame(
                 else:
                     img_annotated = img_bgr.copy()
                 
+                # Process person re-ID and get labels for each tracked person
+                if REID_CONFIG["enabled"] and len(tracker_ids) > 0 and len(rects) > 0:
+                    for idx, (track_id, rect) in enumerate(zip(tracker_ids, rects)):
+                        try:
+                            bbox = [int(x) for x in rect]  # [x1, y1, x2, y2]
+                            label = process_person_detection(
+                                img_bgr, bbox, track_id, camera_id
+                            )
+                            if label:
+                                person_labels[int(track_id)] = label
+                        except Exception as e:
+                            print(f"⚠️  Person labeling failed for track {track_id}: {e}")
+                
                 frame_b64_annotated = jpeg_b64(img_annotated)
                 
             except Exception as e:
@@ -400,16 +537,18 @@ async def ingest_frame(
                 "last_tracker_ids": ",".join(map(str, tracker_ids))
             })
         
-        # Prepare broadcast payload
+        # Prepare broadcast payload with person labels
         payload = {
             "event": "frame",
             "camera_id": camera_id,
             "room_id": room_id,
             "occupancy": occupancy,
             "objects": tracker_ids,
+            "person_labels": person_labels,  # NEW: Person labels mapped by tracker_id
             "rects": rects,
             "ts": time.time(),
             "tracking_method": tracking_method,
+            "reid_enabled": REID_CONFIG["enabled"],
             "frame_b64": frame_b64_annotated
         }
         
@@ -423,8 +562,10 @@ async def ingest_frame(
             "ok": True,
             "occupancy": occupancy,
             "objects": tracker_ids,
+            "person_labels": person_labels,  # NEW
             "count_boxes": len(rects),
             "tracking_method": tracking_method,
+            "reid_enabled": REID_CONFIG["enabled"],
             "status": "violation" if occupancy > MAX_OCCUPANCY else "ok"
         }
     
@@ -524,6 +665,14 @@ async def get_config():
                 "n_init": ENHANCED_TRACK_CONFIG["n_init"]
             }
         },
+        "person_reid": {
+            "enabled": REID_CONFIG["enabled"],
+            "available": REID_AVAILABLE,
+            "similarity_threshold": REID_CONFIG["similarity_threshold"],
+            "cloud_storage": REID_CONFIG["cloud_storage"],
+            "ttl_days": REID_CONFIG["ttl_days"],
+            "active_instances": len(person_reidentifiers)
+        },
         "detection": {
             "model": YOLO_MODEL_PATH,
             "confidence_threshold": TRACK_ACTIVATION_THRESHOLD,
@@ -542,6 +691,132 @@ async def get_config():
             "redis_connected": redis_client is not None
         }
     }
+
+# ============= Person Re-ID APIs =============
+
+@app.get("/persons")
+async def list_persons(camera_id: Optional[str] = None):
+    """List all known persons (optionally filtered by camera)"""
+    if not REID_CONFIG["enabled"]:
+        return {"error": "Person re-ID not enabled"}, 400
+    
+    try:
+        if camera_id:
+            reidentifier = person_reidentifiers.get(camera_id)
+            if not reidentifier:
+                return []
+            persons = reidentifier.list_persons()
+        else:
+            # Combine from all cameras
+            all_persons = {}
+            for reid in person_reidentifiers.values():
+                for person in reid.list_persons():
+                    pid = person["person_id"]
+                    if pid not in all_persons:
+                        all_persons[pid] = person
+            persons = list(all_persons.values())
+        
+        return {
+            "camera_id": camera_id,
+            "total": len(persons),
+            "persons": persons
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.get("/persons/stats")
+async def person_stats(camera_id: Optional[str] = None):
+    """Get re-ID statistics"""
+    if not REID_CONFIG["enabled"]:
+        return {"error": "Person re-ID not enabled"}, 400
+    
+    try:
+        stats = {}
+        
+        if camera_id:
+            reid = person_reidentifiers.get(camera_id)
+            if reid:
+                stats[camera_id] = reid.get_stats()
+        else:
+            for cam_id, reid in person_reidentifiers.items():
+                stats[cam_id] = reid.get_stats()
+        
+        return {"cameras": stats}
+    
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.get("/persons/{person_id}")
+async def get_person(person_id: str, camera_id: Optional[str] = None):
+    """Get details for specific person"""
+    if not REID_CONFIG["enabled"]:
+        return {"error": "Person re-ID not enabled"}, 400
+    
+    try:
+        # Search in specified camera or all
+        cameras_to_search = [camera_id] if camera_id else list(person_reidentifiers.keys())
+        
+        for cam_id in cameras_to_search:
+            reid = person_reidentifiers.get(cam_id)
+            if not reid or person_id not in reid.persons:
+                continue
+            
+            person_info = reid.get_person_info(person_id)
+            if person_info:
+                return person_info
+        
+        return {"error": "Person not found"}, 404
+    
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.post("/persons/merge")
+async def merge_persons(person_id1: str, person_id2: str, camera_id: Optional[str] = None):
+    """Merge two persons (combine their embeddings and visits)"""
+    if not REID_CONFIG["enabled"]:
+        return {"error": "Person re-ID not enabled"}, 400
+    
+    try:
+        cam_id = camera_id or list(person_reidentifiers.keys())[0]
+        reid = person_reidentifiers.get(cam_id)
+        
+        if not reid:
+            return {"error": "No re-ID instance for camera"}, 400
+        
+        if reid.merge_persons(person_id1, person_id2):
+            return {"ok": True, "message": f"Merged {person_id2} into {person_id1}"}
+        else:
+            return {"error": "Failed to merge persons"}, 400
+    
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.post("/persons/reset")
+async def reset_persons(camera_id: Optional[str] = None):
+    """Reset persons for camera (or all cameras)"""
+    if not REID_CONFIG["enabled"]:
+        return {"error": "Person re-ID not enabled"}, 400
+    
+    try:
+        if camera_id:
+            # Reset specific camera
+            if camera_id in person_reidentifiers:
+                person_reidentifiers[camera_id].reset()
+            if camera_id in person_storages:
+                person_storages[camera_id].reset_all()
+            cameras_reset = [camera_id]
+        else:
+            # Reset all
+            for reid in person_reidentifiers.values():
+                reid.reset()
+            for storage in person_storages.values():
+                storage.reset_all()
+            cameras_reset = list(person_reidentifiers.keys())
+        
+        return {"ok": True, "message": f"Reset persons for {len(cameras_reset)} cameras"}
+    
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 @app.get("/")
 async def root():
