@@ -79,8 +79,12 @@ redis_client = None
 yolo_model: Optional[Any] = None
 trackers: Dict[str, Any] = {}
 enhanced_trackers: Dict[str, Any] = {}  # For enhanced hybrid trackers
-person_reidentifiers: Dict[str, Any] = {}  # Per-camera re-ID instances
-person_storages: Dict[str, Any] = {}  # Per-camera storage instances
+person_reidentifiers: Dict[str, Any] = {}  # Per-camera re-ID instances (DEPRECATED: use global_person_reidentifier)
+person_storages: Dict[str, Any] = {}  # Per-camera storage instances (DEPRECATED: use global_person_storage)
+
+# GLOBAL cross-camera re-ID (NEW: shared across all cameras)
+global_person_reidentifier: Optional[Any] = None  # Shared re-ID gallery for all cameras
+global_person_storage: Optional[Any] = None  # Shared Redis storage for all cameras
 
 # ByteTrack configuration parameters (for supervision 0.26.1+)
 TRACK_ACTIVATION_THRESHOLD = 0.4
@@ -277,42 +281,55 @@ def draw_boxes_on_image(
     return img_copy
 
 # ============= Person Re-ID Helpers =============
-def ensure_person_reidentifier(camera_id: str) -> Optional[Any]:
-    """Get or create person re-identifier for camera"""
+def ensure_global_person_reidentifier() -> Optional[Any]:
+    """Get or create GLOBAL person re-identifier (cross-camera)"""
+    global global_person_reidentifier
+    
     if not REID_CONFIG["enabled"]:
         return None
     
-    if camera_id not in person_reidentifiers:
+    if global_person_reidentifier is None:
         try:
-            reidentifier = PersonReIdentifier(
+            global_person_reidentifier = PersonReIdentifier(
                 similarity_threshold=REID_CONFIG["similarity_threshold"]
             )
-            person_reidentifiers[camera_id] = reidentifier
-            print(f"✅ Initialized person re-ID for {camera_id}")
+            print(f"✅ Initialized GLOBAL cross-camera person re-ID")
         except Exception as e:
-            print(f"⚠️  Failed to initialize person re-ID: {e}")
+            print(f"⚠️  Failed to initialize global person re-ID: {e}")
             return None
     
-    return person_reidentifiers[camera_id]
+    return global_person_reidentifier
 
-def ensure_person_storage(camera_id: str) -> Optional[Any]:
-    """Get or create person storage for camera"""
+def ensure_global_person_storage() -> Optional[Any]:
+    """Get or create GLOBAL person storage (cross-camera Redis)"""
+    global global_person_storage
+    
     if not REID_CONFIG["enabled"]:
         return None
     
-    if camera_id not in person_storages and redis_client:
+    if global_person_storage is None and redis_client:
         try:
-            storage = PersonRedisStorage(
+            global_person_storage = PersonRedisStorage(
                 redis_client,
-                namespace=f"saferoom:persons:{camera_id}",
+                namespace="saferoom:persons:global",  # Global namespace
                 ttl_days=REID_CONFIG["ttl_days"]
             )
-            person_storages[camera_id] = storage
+            print(f"✅ Initialized GLOBAL cross-camera person storage")
         except Exception as e:
-            print(f"⚠️  Failed to initialize person storage: {e}")
+            print(f"⚠️  Failed to initialize global person storage: {e}")
             return None
     
-    return person_storages.get(camera_id)
+    return global_person_storage
+
+def ensure_person_reidentifier(camera_id: str) -> Optional[Any]:
+    """DEPRECATED: Get or create person re-identifier for camera
+    Now uses global instance instead of per-camera"""
+    return ensure_global_person_reidentifier()
+
+def ensure_person_storage(camera_id: str) -> Optional[Any]:
+    """DEPRECATED: Get or create person storage for camera
+    Now uses global instance instead of per-camera"""
+    return ensure_global_person_storage()
 
 def process_person_detection(
     frame: np.ndarray,
@@ -671,7 +688,9 @@ async def get_config():
             "similarity_threshold": REID_CONFIG["similarity_threshold"],
             "cloud_storage": REID_CONFIG["cloud_storage"],
             "ttl_days": REID_CONFIG["ttl_days"],
-            "active_instances": len(person_reidentifiers)
+            "instance_type": "global_cross_camera",
+            "total_persons": len(ensure_global_person_reidentifier().persons) if ensure_global_person_reidentifier() else 0,
+            "per_camera_trackers": len(enhanced_trackers)
         },
         "detection": {
             "model": YOLO_MODEL_PATH,
@@ -701,20 +720,15 @@ async def list_persons(camera_id: Optional[str] = None):
         return {"error": "Person re-ID not enabled"}, 400
     
     try:
+        reidentifier = ensure_global_person_reidentifier()
+        if not reidentifier:
+            return {"error": "Re-ID not initialized"}, 500
+        
+        persons = reidentifier.list_persons()
+        
+        # Filter by camera if specified
         if camera_id:
-            reidentifier = person_reidentifiers.get(camera_id)
-            if not reidentifier:
-                return []
-            persons = reidentifier.list_persons()
-        else:
-            # Combine from all cameras
-            all_persons = {}
-            for reid in person_reidentifiers.values():
-                for person in reid.list_persons():
-                    pid = person["person_id"]
-                    if pid not in all_persons:
-                        all_persons[pid] = person
-            persons = list(all_persons.values())
+            persons = [p for p in persons if camera_id in p.get("cameras", [])]
         
         return {
             "camera_id": camera_id,
@@ -726,22 +740,47 @@ async def list_persons(camera_id: Optional[str] = None):
 
 @app.get("/persons/stats")
 async def person_stats(camera_id: Optional[str] = None):
-    """Get re-ID statistics"""
+    """Get re-ID statistics (global across all cameras)"""
     if not REID_CONFIG["enabled"]:
         return {"error": "Person re-ID not enabled"}, 400
     
     try:
-        stats = {}
+        reidentifier = ensure_global_person_reidentifier()
+        if not reidentifier:
+            return {"error": "Re-ID not initialized"}, 500
         
+        stats = reidentifier.get_stats()
+        
+        # If camera filter requested, show breakdown per camera
         if camera_id:
-            reid = person_reidentifiers.get(camera_id)
-            if reid:
-                stats[camera_id] = reid.get_stats()
+            persons = [p for p in reidentifier.list_persons() 
+                      if camera_id in p.get("cameras", [])]
+            camera_stats = {
+                "total_persons": len(persons),
+                "total_embeddings": sum(p.get("num_embeddings", 0) for p in persons),
+                "avg_visits": sum(p.get("visit_count", 0) for p in persons) / len(persons) if persons else 0,
+                "cameras": [camera_id]
+            }
+            return {"cameras": {camera_id: camera_stats}}
         else:
-            for cam_id, reid in person_reidentifiers.items():
-                stats[cam_id] = reid.get_stats()
-        
-        return {"cameras": stats}
+            # Return global stats grouped by camera
+            persons_by_camera = {}
+            for person in reidentifier.list_persons():
+                for cam in person.get("cameras", []):
+                    if cam not in persons_by_camera:
+                        persons_by_camera[cam] = []
+                    persons_by_camera[cam].append(person)
+            
+            camera_stats = {}
+            for cam, persons_list in persons_by_camera.items():
+                camera_stats[cam] = {
+                    "total_persons": len(persons_list),
+                    "total_embeddings": sum(p.get("num_embeddings", 0) for p in persons_list),
+                    "avg_visits": sum(p.get("visit_count", 0) for p in persons_list) / len(persons_list) if persons_list else 0,
+                    "cameras": [cam]
+                }
+            
+            return {"cameras": camera_stats if camera_stats else {}}
     
     except Exception as e:
         return {"error": str(e)}, 500
@@ -753,17 +792,19 @@ async def get_person(person_id: str, camera_id: Optional[str] = None):
         return {"error": "Person re-ID not enabled"}, 400
     
     try:
-        # Search in specified camera or all
-        cameras_to_search = [camera_id] if camera_id else list(person_reidentifiers.keys())
+        reidentifier = ensure_global_person_reidentifier()
+        if not reidentifier:
+            return {"error": "Re-ID not initialized"}, 500
         
-        for cam_id in cameras_to_search:
-            reid = person_reidentifiers.get(cam_id)
-            if not reid or person_id not in reid.persons:
-                continue
+        # Get person from global gallery
+        if person_id in reidentifier.persons:
+            person_info = reidentifier.get_person_info(person_id)
             
-            person_info = reid.get_person_info(person_id)
-            if person_info:
-                return person_info
+            # Filter by camera if specified
+            if camera_id and camera_id not in person_info.get("cameras", []):
+                return {"error": "Person not found in specified camera"}, 404
+            
+            return person_info
         
         return {"error": "Person not found"}, 404
     
@@ -772,18 +813,24 @@ async def get_person(person_id: str, camera_id: Optional[str] = None):
 
 @app.post("/persons/merge")
 async def merge_persons(person_id1: str, person_id2: str, camera_id: Optional[str] = None):
-    """Merge two persons (combine their embeddings and visits)"""
+    """Merge two persons (combine their embeddings and visits) - GLOBAL"""
     if not REID_CONFIG["enabled"]:
         return {"error": "Person re-ID not enabled"}, 400
     
     try:
-        cam_id = camera_id or list(person_reidentifiers.keys())[0]
-        reid = person_reidentifiers.get(cam_id)
+        reidentifier = ensure_global_person_reidentifier()
+        storage = ensure_global_person_storage()
         
-        if not reid:
-            return {"error": "No re-ID instance for camera"}, 400
+        if not reidentifier:
+            return {"error": "Re-ID not initialized"}, 500
         
-        if reid.merge_persons(person_id1, person_id2):
+        if reidentifier.merge_persons(person_id1, person_id2):
+            # Update storage
+            if storage:
+                person_info = reidentifier.get_person_info(person_id1)
+                storage.save_person(person_info)
+                storage.delete_person(person_id2)
+            
             return {"ok": True, "message": f"Merged {person_id2} into {person_id1}"}
         else:
             return {"error": "Failed to merge persons"}, 400
@@ -793,25 +840,40 @@ async def merge_persons(person_id1: str, person_id2: str, camera_id: Optional[st
 
 @app.post("/persons/reset")
 async def reset_persons(camera_id: Optional[str] = None):
-    """Reset persons for camera (or all cameras)"""
+    """Reset persons gallery (global or for specific camera)"""
     if not REID_CONFIG["enabled"]:
         return {"error": "Person re-ID not enabled"}, 400
     
     try:
+        reidentifier = ensure_global_person_reidentifier()
+        storage = ensure_global_person_storage()
+        
+        if not reidentifier:
+            return {"error": "Re-ID not initialized"}, 500
+        
         if camera_id:
-            # Reset specific camera
-            if camera_id in person_reidentifiers:
-                person_reidentifiers[camera_id].reset()
-            if camera_id in person_storages:
-                person_storages[camera_id].reset_all()
+            # Reset only persons from specific camera
+            persons_to_remove = [
+                p["person_id"] for p in reidentifier.list_persons()
+                if camera_id in p.get("cameras", [])
+            ]
+            for person_id in persons_to_remove:
+                if person_id in reidentifier.persons:
+                    reidentifier.persons.pop(person_id, None)
+                if storage:
+                    storage.delete_person(person_id)
             cameras_reset = [camera_id]
         else:
             # Reset all
-            for reid in person_reidentifiers.values():
-                reid.reset()
-            for storage in person_storages.values():
+            reidentifier.reset()
+            if storage:
                 storage.reset_all()
-            cameras_reset = list(person_reidentifiers.keys())
+            cameras_reset = ["ALL"]
+        
+        return {"ok": True, "message": f"Reset persons for {len(cameras_reset)} cameras"}
+    
+    except Exception as e:
+        return {"error": str(e)}, 500
         
         return {"ok": True, "message": f"Reset persons for {len(cameras_reset)} cameras"}
     
