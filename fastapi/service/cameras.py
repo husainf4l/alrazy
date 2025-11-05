@@ -68,7 +68,7 @@ class CameraService:
                 "location": "Front Door",
                 "description": "Main entrance security camera",
                 "isActive": True,
-                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/101",
+                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/102",  # Sub-stream for faster streaming
                 "webrtcUrl": None,
                 "status": "offline",
                 "lastSeen": None,
@@ -80,9 +80,9 @@ class CameraService:
                     "zoom": False
                 },
                 "settings": {
-                    "resolution": "1920x1080",
-                    "frameRate": 30,
-                    "quality": "high"
+                    "resolution": "640x480",  # Lower resolution for faster streaming
+                    "frameRate": 15,  # Lower frame rate
+                    "quality": "medium"
                 }
             },
             {
@@ -91,7 +91,7 @@ class CameraService:
                 "location": "Back Yard", 
                 "description": "Backyard area monitoring",
                 "isActive": True,
-                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/201",
+                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/202",  # Sub-stream for faster streaming
                 "webrtcUrl": None,
                 "status": "offline",
                 "lastSeen": None,
@@ -103,8 +103,8 @@ class CameraService:
                     "zoom": False
                 },
                 "settings": {
-                    "resolution": "1920x1080",
-                    "frameRate": 25,
+                    "resolution": "640x480",  # Lower resolution for faster streaming
+                    "frameRate": 15,  # Lower frame rate
                     "quality": "medium"
                 }
             },
@@ -114,7 +114,7 @@ class CameraService:
                 "location": "Garage",
                 "description": "Garage area surveillance",
                 "isActive": True,
-                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/301",
+                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/302",  # Sub-stream for faster streaming
                 "webrtcUrl": None,
                 "status": "offline",
                 "lastSeen": None,
@@ -126,8 +126,8 @@ class CameraService:
                     "zoom": True
                 },
                 "settings": {
-                    "resolution": "1280x720",
-                    "frameRate": 20,
+                    "resolution": "640x480",  # Lower resolution for faster streaming
+                    "frameRate": 15,  # Lower frame rate
                     "quality": "medium"
                 }
             },
@@ -137,7 +137,7 @@ class CameraService:
                 "location": "Side Entrance",
                 "description": "Side door monitoring camera",
                 "isActive": True,
-                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/401",
+                "rtspUrl": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/402",  # Sub-stream for faster streaming
                 "webrtcUrl": None,
                 "status": "offline",
                 "lastSeen": None,
@@ -149,9 +149,9 @@ class CameraService:
                     "zoom": False
                 },
                 "settings": {
-                    "resolution": "1920x1080",
-                    "frameRate": 30,
-                    "quality": "high"
+                    "resolution": "640x480",  # Lower resolution for faster streaming
+                    "frameRate": 15,  # Lower frame rate
+                    "quality": "medium"
                 }
             }
         ]

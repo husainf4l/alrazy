@@ -254,9 +254,18 @@ async def get_streams_status():
 
 @app.get("/api/cameras")
 async def get_cameras():
-    """Get all cameras from the database."""
+    """Get all cameras from the database with session IDs."""
     try:
         cameras = await camera_service.fetch_cameras_from_api()
+        
+        # Add session IDs from persistent streams
+        persistent_streams = await video_streaming_service.get_persistent_streams()
+        for camera in cameras:
+            camera_id = camera.get("id")
+            if camera_id in persistent_streams["persistent_streams"]:
+                stream_info = persistent_streams["persistent_streams"][camera_id]
+                camera["sessionId"] = stream_info.get("session_id")
+        
         return {"success": True, "cameras": cameras, "count": len(cameras)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch cameras: {str(e)}")
