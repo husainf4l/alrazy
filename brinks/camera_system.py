@@ -46,6 +46,30 @@ class CameraConfig:
     USE_SUB_STREAMS = True  # Use lower quality streams for better performance
     CAMERA_IP = '192.168.1.186'
     RTSP_PORT = 554
+    
+    # Streaming Configuration (Professional 2K Video)
+    STREAMING_CONFIG = {
+        'enabled': True,
+        'codec': 'H.265',  # H.265 (HEVC) for better compression
+        'resolution': (2560, 1440),  # 2K resolution
+        'fps': 30,  # 25-30 fps
+        'bitrate_kbps': 6144,  # 6 Mbps (4-8 Mbps range)
+        'quality': 'high',  # high, medium, low
+    }
+    
+    # FFmpeg/OpenCV Codec Mapping
+    CODEC_PARAMS = {
+        'H.265': {
+            'fourcc': 'H265',  # OpenCV fourcc code for HEVC
+            'preset': 'medium',  # ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+            'crf': 23,  # 0-51 (lower = better quality, default 28)
+        },
+        'H.264': {
+            'fourcc': 'H264',
+            'preset': 'medium',
+            'crf': 23,
+        }
+    }
 
 class Camera:
     """Individual camera handler"""
@@ -61,6 +85,24 @@ class Camera:
         
         # Use sub-stream by default for better performance
         self.stream_url = config['sub_stream'] if CameraConfig.USE_SUB_STREAMS else config['main_stream']
+        
+        # Streaming configuration
+        self.streaming_enabled = CameraConfig.STREAMING_CONFIG['enabled']
+        self.codec = CameraConfig.STREAMING_CONFIG['codec']
+        self.resolution = CameraConfig.STREAMING_CONFIG['resolution']
+        self.fps = CameraConfig.STREAMING_CONFIG['fps']
+        self.bitrate_kbps = CameraConfig.STREAMING_CONFIG['bitrate_kbps']
+        
+    def get_streaming_config(self) -> Dict:
+        """Return streaming configuration"""
+        return {
+            'enabled': self.streaming_enabled,
+            'codec': self.codec,
+            'resolution': self.resolution,
+            'fps': self.fps,
+            'bitrate_kbps': self.bitrate_kbps,
+            'bitrate_mbps': self.bitrate_kbps / 1024,
+        }
         
     def connect(self) -> bool:
         """Connect to camera stream"""

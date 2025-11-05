@@ -93,6 +93,31 @@ MINIMUM_MATCHING_THRESHOLD = 0.8
 FRAME_RATE = 15
 MINIMUM_CONSECUTIVE_FRAMES = 1
 
+# Image Quality Configuration (for high-quality camera output)
+IMAGE_QUALITY_CONFIG = {
+    "jpeg_quality": int(os.environ.get("JPEG_QUALITY", "98")),  # 98 for maximum quality (0-100)
+    "enable_auto_contrast": os.environ.get("AUTO_CONTRAST", "true").lower() in ["true", "1", "yes"],
+    "enable_histogram_equalization": os.environ.get("HISTOGRAM_EQ", "false").lower() in ["true", "1", "yes"],
+    "enable_denoise": os.environ.get("ENABLE_DENOISE", "false").lower() in ["true", "1", "yes"],  # Disabled by default (reduces detail)
+    "denoise_strength": int(os.environ.get("DENOISE_STRENGTH", "5")),  # 3-15, higher = more denoising
+    "enable_clahe": os.environ.get("ENABLE_CLAHE", "true").lower() in ["true", "1", "yes"],  # Contrast-limited adaptive histogram equalization
+    "clahe_clip_limit": float(os.environ.get("CLAHE_CLIP_LIMIT", "2.0")),  # Recommended: 2.0-4.0
+    "clahe_tile_size": int(os.environ.get("CLAHE_TILE_SIZE", "8")),  # Tile grid size
+    "enable_sharpening": os.environ.get("ENABLE_SHARPENING", "true").lower() in ["true", "1", "yes"],
+    "sharpening_strength": float(os.environ.get("SHARPENING_STRENGTH", "1.2")),  # 1.0 = no sharpening, 2.0 = strong
+    "resize_to_max": int(os.environ.get("MAX_IMAGE_SIZE", "0")),  # 0 = no resize, otherwise max dimension
+}
+
+# Professional Streaming Configuration (2K Video)
+STREAMING_CONFIG = {
+    "enabled": os.environ.get("STREAMING_ENABLED", "true").lower() in ["true", "1", "yes"],
+    "codec": os.environ.get("STREAMING_CODEC", "H.265"),  # H.265 (HEVC) or H.264
+    "resolution": tuple(map(int, os.environ.get("STREAMING_RESOLUTION", "2560,1440").split(","))),  # 2560x1440 (2K)
+    "fps": int(os.environ.get("STREAMING_FPS", "30")),  # 25-30 fps
+    "bitrate_kbps": int(os.environ.get("STREAMING_BITRATE_KBPS", "6144")),  # 6144 kbps = 6 Mbps (4-8 Mbps range)
+    "quality": os.environ.get("STREAMING_QUALITY", "high"),  # high, medium, low
+}
+
 # Enhanced tracking configuration
 ENHANCED_TRACK_CONFIG = {
     "use_deepsort": USE_ENHANCED_TRACKING and ENHANCED_TRACKING_AVAILABLE,
@@ -202,12 +227,98 @@ app.add_middleware(
 )
 
 # ============= Helper Functions =============
+def enhance_image_quality(img_bgr: np.ndarray) -> np.ndarray:
+    """
+    Enhance image quality using best practices.
+    Focus on preserving detail while improving contrast and clarity.
+    """
+    img = img_bgr.copy().astype(np.float32) / 255.0
+    
+    # 1. Apply CLAHE (Contrast-Limited Adaptive Histogram Equalization)
+    # This improves local contrast without damaging edges
+    if IMAGE_QUALITY_CONFIG["enable_clahe"]:
+        # Convert to LAB color space for better contrast enhancement
+        img_lab = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_BGR2LAB)
+        l_channel = img_lab[:, :, 0]
+        
+        # Apply CLAHE only to L channel (brightness)
+        clahe = cv2.createCLAHE(
+            clipLimit=IMAGE_QUALITY_CONFIG["clahe_clip_limit"],
+            tileGridSize=(IMAGE_QUALITY_CONFIG["clahe_tile_size"], IMAGE_QUALITY_CONFIG["clahe_tile_size"])
+        )
+        l_channel_enhanced = clahe.apply(l_channel)
+        
+        # Merge back
+        img_lab[:, :, 0] = l_channel_enhanced
+        img = cv2.cvtColor(img_lab, cv2.COLOR_LAB2BGR).astype(np.float32) / 255.0
+    
+    # 2. Apply unsharp masking for controlled sharpening (preserves detail better than naive sharpening)
+    if IMAGE_QUALITY_CONFIG["enable_sharpening"]:
+        # Create a blurred version
+        blurred = cv2.GaussianBlur(img, (0, 0), 2.0)
+        
+        # Unsharp mask: Original + (Original - Blurred) * strength
+        sharpened = img + (img - blurred) * (IMAGE_QUALITY_CONFIG["sharpening_strength"] - 1.0)
+        
+        # Clip to valid range
+        img = np.clip(sharpened, 0, 1)
+    
+    # 3. Optional: Apply light denoising only if explicitly enabled
+    # WARNING: Heavy denoising reduces image quality for detection
+    if IMAGE_QUALITY_CONFIG["enable_denoise"]:
+        img_uint8 = (img * 255).astype(np.uint8)
+        # Non-local means denoising (better than bilateral for preserving edges)
+        img_uint8 = cv2.fastNlMeansDenoisingColored(
+            img_uint8,
+            h=IMAGE_QUALITY_CONFIG["denoise_strength"],
+            hForColorComponents=IMAGE_QUALITY_CONFIG["denoise_strength"],
+            templateWindowSize=7,
+            searchWindowSize=21
+        )
+        img = img_uint8.astype(np.float32) / 255.0
+    
+    # 4. Auto-contrast adjustment (improves visibility)
+    if IMAGE_QUALITY_CONFIG["enable_auto_contrast"]:
+        # Stretch the contrast to use full range
+        img_min = img.min(axis=(0, 1), keepdims=True)
+        img_max = img.max(axis=(0, 1), keepdims=True)
+        img_range = img_max - img_min
+        img_range[img_range == 0] = 1  # Avoid division by zero
+        img = (img - img_min) / img_range
+    
+    # Convert back to uint8
+    return (np.clip(img, 0, 1) * 255).astype(np.uint8)
+
+def resize_image_if_needed(img_bgr: np.ndarray) -> np.ndarray:
+    """Resize image if max size is configured, preserving aspect ratio"""
+    if IMAGE_QUALITY_CONFIG["resize_to_max"] <= 0:
+        return img_bgr
+    
+    max_dim = IMAGE_QUALITY_CONFIG["resize_to_max"]
+    h, w = img_bgr.shape[:2]
+    
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        return cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+    
+    return img_bgr
+
 def jpeg_b64(img_bgr: np.ndarray) -> str:
-    """Convert image to base64 JPEG for transmission"""
+    """Convert image to base64 JPEG for transmission (high quality)"""
     try:
-        ok, buf = cv2.imencode(".jpg", img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        # Apply image enhancement
+        img_enhanced = enhance_image_quality(img_bgr)
+        
+        # Encode with high quality
+        jpeg_quality = IMAGE_QUALITY_CONFIG["jpeg_quality"]
+        ok, buf = cv2.imencode(".jpg", img_enhanced, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+        
         if ok:
             return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
+        else:
+            print(f"⚠️  JPEG encoding failed (ok={ok})")
     except Exception as e:
         print(f"⚠️  Image encoding error: {e}")
     return ""
@@ -704,6 +815,27 @@ async def get_config():
         "active_trackers": {
             "standard": len(trackers),
             "enhanced": len(enhanced_trackers)
+        },
+        "camera_quality": {
+            "jpeg_quality": IMAGE_QUALITY_CONFIG["jpeg_quality"],
+            "enable_clahe": IMAGE_QUALITY_CONFIG["enable_clahe"],
+            "clahe_clip_limit": IMAGE_QUALITY_CONFIG["clahe_clip_limit"],
+            "enable_sharpening": IMAGE_QUALITY_CONFIG["enable_sharpening"],
+            "sharpening_strength": IMAGE_QUALITY_CONFIG["sharpening_strength"],
+            "enable_auto_contrast": IMAGE_QUALITY_CONFIG["enable_auto_contrast"],
+            "enable_denoise": IMAGE_QUALITY_CONFIG["enable_denoise"],
+            "denoise_strength": IMAGE_QUALITY_CONFIG["denoise_strength"],
+            "max_image_size": IMAGE_QUALITY_CONFIG["resize_to_max"]
+        },
+        "streaming": {
+            "enabled": STREAMING_CONFIG["enabled"],
+            "codec": STREAMING_CONFIG["codec"],
+            "resolution": STREAMING_CONFIG["resolution"],
+            "resolution_2k": f"{STREAMING_CONFIG['resolution'][0]}x{STREAMING_CONFIG['resolution'][1]}",
+            "fps": STREAMING_CONFIG["fps"],
+            "bitrate_kbps": STREAMING_CONFIG["bitrate_kbps"],
+            "bitrate_mbps": STREAMING_CONFIG["bitrate_kbps"] / 1024,
+            "quality": STREAMING_CONFIG["quality"]
         },
         "system": {
             "room_id": ROOM_ID,
