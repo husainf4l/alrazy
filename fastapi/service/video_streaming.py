@@ -502,6 +502,11 @@ class RTSPVideoTrack(VideoStreamTrack):
         """Analyze frame with YOLO for ultra-fast person detection and tracking."""
         try:
             self.analysis_frame_count += 1
+            
+            # Periodic cleanup of old ByteTrack tracks (every 300 frames = 10 seconds @ 30fps)
+            if self.analysis_frame_count % 300 == 0:
+                self.cleanup_old_bytetrack_tracks()
+            
             analyzed_frame = frame.copy()
             
             # Only analyze periodically for performance
@@ -514,10 +519,16 @@ class RTSPVideoTrack(VideoStreamTrack):
                         results = self.yolo_model.track(
                             frame, 
                             persist=True,  # Keep tracking across frames
-                            conf=0.4,  # Confidence threshold
+                            conf=0.3,  # Lower confidence for more detections (ByteTrack benefit)
                             classes=[0],  # class 0 = person
                             verbose=False,  # Suppress output
-                            tracker="bytetrack.yaml"  # Use ByteTrack for fast tracking
+                            tracker="bytetrack.yaml",  # Use ByteTrack for superior tracking
+                            # ByteTrack optimized parameters
+                            track_high_thresh=0.6,    # Higher threshold for reliable first association
+                            track_low_thresh=0.15,    # Allow recovery of lost tracks
+                            new_track_thresh=0.7,     # Higher threshold for new track creation
+                            track_buffer=45,          # Keep lost tracks longer (1.5s @ 30fps)
+                            match_thresh=0.8          # Similarity threshold for matching
                         )
                         
                         # Extract tracked person detections
@@ -1354,6 +1365,42 @@ class VideoStreamingService:
                     
         except Exception as e:
             logger.error(f"Error cleaning up session {session_id}: {e}")
+    
+    def cleanup_old_bytetrack_tracks(self, max_age_frames: int = 900):
+        """Clean up old ByteTrack tracks to prevent memory leaks.
+        
+        Args:
+            max_age_frames: Maximum age in frames before removing a track (default 900 = 30s @ 30fps)
+        """
+        try:
+            current_frame = self.analysis_frame_count
+            tracks_to_remove = []
+            
+            for track_id, history in self.track_history.items():
+                if not history:
+                    tracks_to_remove.append(track_id)
+                    continue
+                
+                # Check if track is too old (no updates in max_age_frames)
+                # Since we don't store frame numbers, estimate based on history length
+                # Assuming we store trajectory points every frame
+                if len(history) > 0:
+                    # If we haven't added new points recently, the track might be stale
+                    # For now, remove tracks with very long histories that might be memory leaks
+                    if len(history) > max_age_frames:
+                        tracks_to_remove.append(track_id)
+            
+            # Remove old tracks
+            for track_id in tracks_to_remove:
+                del self.track_history[track_id]
+                if track_id in self.current_tracked_ids:
+                    self.current_tracked_ids.remove(track_id)
+            
+            if tracks_to_remove:
+                logger.debug(f"🧹 Cleaned up {len(tracks_to_remove)} old ByteTrack tracks")
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up ByteTrack tracks: {e}")
     
     async def recreate_session(self, session_id: str) -> Dict[str, Any]:
         """Recreate a session if it was closed."""
