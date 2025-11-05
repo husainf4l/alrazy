@@ -78,8 +78,8 @@ async def auto_initialize_camera_streams():
                     failed_streams += 1
                     continue
                 
-                # Create analyzed WebRTC stream with default live mode for maximum speed
-                result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id, "live")
+                # Create analyzed WebRTC stream with balanced mode (enables ByteTrack tracking)
+                result = await video_streaming_service.create_analyzed_webrtc_stream(camera_id, "balanced")
                 
                 if result["success"]:
                     successful_streams += 1
@@ -199,6 +199,18 @@ async def camera_dashboard_page():
         return HTMLResponse(content=html_content)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Camera dashboard page not found")
+
+
+@app.get("/camera_view.html", response_class=HTMLResponse)
+async def camera_view_page():
+    """Serve the individual camera view HTML page."""
+    try:
+        import aiofiles
+        async with aiofiles.open("camera_view.html", "r") as f:
+            html_content = await f.read()
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Camera view page not found")
 
 
 # Status and monitoring endpoints
@@ -351,20 +363,30 @@ async def get_all_tracking_summary():
         
         for camera_id, stream_info in video_streaming_service.persistent_streams.items():
             session_id = stream_info.get("session_id")
+            streaming_mode = stream_info.get("streaming_mode", "unknown")
+            analysis_enabled = stream_info.get("analysis_enabled", False)
             
-            if session_id and session_id in video_streaming_service.video_tracks:
-                video_track = video_streaming_service.video_tracks[session_id]
-                
-                camera_stats = {
-                    "camera_id": camera_id,
-                    "current_people": video_track.people_count,
-                    "total_tracked": video_track.tracked_people_count,
-                    "active_ids": len(video_track.current_tracked_ids),
-                    "streaming_mode": stream_info.get("streaming_mode", "unknown"),
-                    "analysis_enabled": stream_info.get("analysis_enabled", False)
-                }
-                
-                summary["cameras"].append(camera_stats)
+            # Initialize default stats
+            camera_stats = {
+                "camera_id": camera_id,
+                "current_people": 0,
+                "total_tracked": 0,
+                "active_ids": [],
+                "streaming_mode": streaming_mode,
+                "analysis_enabled": analysis_enabled
+            }
+            
+            # Only get tracking data if analysis is enabled and video track exists
+            if analysis_enabled and session_id and session_id in video_streaming_service.video_tracks:
+                try:
+                    video_track = video_streaming_service.video_tracks[session_id]
+                    camera_stats["current_people"] = getattr(video_track, "people_count", 0)
+                    camera_stats["total_tracked"] = getattr(video_track, "tracked_people_count", 0)
+                    camera_stats["active_ids"] = list(getattr(video_track, "current_tracked_ids", set()))
+                except Exception as track_error:
+                    logger.warning(f"Failed to get tracking data for camera {camera_id}: {str(track_error)}")
+            
+            summary["cameras"].append(camera_stats)
         
         # Calculate totals
         summary["total_current_people"] = sum(c["current_people"] for c in summary["cameras"])
@@ -373,6 +395,7 @@ async def get_all_tracking_summary():
         return JSONResponse(content=summary)
         
     except Exception as e:
+        logger.error(f"Error in tracking summary endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get tracking summary: {str(e)}")
 
 

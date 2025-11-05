@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  # Redis for state storage
+  redis:
+    image: redis:7-alpine
+    container_name: saferoom_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - saferoom_network
+
+  # FastAPI backend
+  api:
+    build: .
+    container_name: saferoom_api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - ROOM_ID=room_safe
+      - MAX_OCCUPANCY=1
+      - VIOLATION_THRESHOLD=2
+      - YOLO_MODEL=yolov8n.pt
+      - VIOLATION_WEBHOOK=${VIOLATION_WEBHOOK:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./dashboard:/app/dashboard
+      - yolo_cache:/root/.cache/ultralytics
+    networks:
+      - saferoom_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  redis_data:
+  yolo_cache:
+
+networks:
+  saferoom_network:
+    driver: bridge

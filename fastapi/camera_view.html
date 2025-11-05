@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera View</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+        }
+        
+        .video-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+        
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #0071e3;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        
+        .status-dot.connected {
+            background-color: #34c759;
+        }
+        
+        .status-dot.connecting {
+            background-color: #ff9500;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        .status-dot.disconnected {
+            background-color: #ff3b30;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+        }
+    </style>
+</head>
+<body class="bg-black min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="glass-effect border-b border-gray-200">
+        <div class="max-w-[1600px] mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button onclick="window.close()" class="text-gray-600 hover:text-gray-900 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <div>
+                        <h1 class="text-xl font-semibold text-gray-900" id="camera-title">Camera View</h1>
+                        <p class="text-xs text-gray-500 font-medium" id="camera-id"></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2 text-sm font-medium">
+                        <span class="status-dot connecting" id="status-dot"></span>
+                        <span class="text-gray-600" id="status-text">Connecting</span>
+                    </div>
+                    <span class="px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider" id="camera-status">
+                        OFFLINE
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Video Container -->
+    <div class="flex-1 relative bg-black" id="video-container">
+        <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+            <div class="loading-spinner mb-4"></div>
+            <p class="text-lg font-medium">Initializing camera stream...</p>
+        </div>
+        <div class="absolute top-4 left-4 bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-lg" id="live-indicator" style="display: none;">
+            Live
+        </div>
+    </div>
+
+    <!-- Controls Footer -->
+    <footer class="glass-effect border-t border-gray-200">
+        <div class="max-w-[1600px] mx-auto px-6 py-4">
+            <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <select id="mode-select" class="bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2.5 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="live">Live</option>
+                        <option value="balanced">Balanced</option>
+                        <option value="analysis">Analysis</option>
+                    </select>
+                    <button id="start-btn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors" onclick="startStream()">
+                        Start Stream
+                    </button>
+                    <button id="stop-btn" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors" onclick="stopStream()" disabled>
+                        Stop Stream
+                    </button>
+                    <button class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors" onclick="changeMode()">
+                        Change Mode
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button class="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors" onclick="captureSnapshot()">
+                        Capture Snapshot
+                    </button>
+                    <button class="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors" onclick="toggleFullscreen()">
+                        Fullscreen
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Stats Bar -->
+            <div class="mt-4 pt-4 border-t border-gray-200 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600 font-medium">Mode</span>
+                    <span class="text-gray-900 font-semibold" id="current-mode">-</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600 font-medium">Analysis</span>
+                    <span class="text-gray-900 font-semibold" id="analysis-status">-</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600 font-medium">People Detected</span>
+                    <span class="text-gray-900 font-semibold" id="people-count">0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600 font-medium">Total Tracked</span>
+                    <span class="text-gray-900 font-semibold" id="tracked-count">0</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Status Messages -->
+    <div id="status-success" class="fixed top-20 right-6 glass-effect border border-green-300 text-green-800 px-5 py-4 rounded-xl shadow-lg hidden z-50 max-w-md">
+    </div>
+    <div id="status-error" class="fixed top-20 right-6 glass-effect border border-red-300 text-red-800 px-5 py-4 rounded-xl shadow-lg hidden z-50 max-w-md">
+    </div>
+    <div id="status-info" class="fixed top-20 right-6 glass-effect border border-blue-300 text-blue-800 px-5 py-4 rounded-xl shadow-lg hidden z-50 max-w-md">
+    </div>
+
+    <script>
+        // Get camera ID from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const cameraIdFromUrl = urlParams.get('id');
+        
+        // Get camera data from localStorage or create empty object
+        const cameraData = JSON.parse(localStorage.getItem('selectedCamera') || '{}');
+        const API_BASE = localStorage.getItem('apiBase') || 'http://localhost:8000';
+        
+        // Use camera ID from URL if available, otherwise from localStorage
+        const cameraId = cameraIdFromUrl || cameraData.id || cameraData.camera_id;
+        
+        // Global state
+        let peerConnection = null;
+        let camera = cameraData;
+
+        // Initialize page
+        async function initializePage() {
+            if (!cameraId) {
+                showStatus('No camera ID provided', 'error');
+                document.getElementById('camera-title').textContent = 'No Camera Selected';
+                return;
+            }
+
+            // If we don't have camera data in localStorage, fetch it from API
+            if (!camera.id && !camera.camera_id) {
+                try {
+                    showStatus('Loading camera data...', 'info');
+                    
+                    // First, try to get all cameras and find this one
+                    const allCamerasResponse = await fetch(`${API_BASE}/api/cameras`);
+                    const allCamerasData = await allCamerasResponse.json();
+                    
+                    if (allCamerasData.success && allCamerasData.cameras) {
+                        const foundCamera = allCamerasData.cameras.find(c => 
+                            (c.id == cameraId || c.camera_id == cameraId)
+                        );
+                        
+                        if (foundCamera) {
+                            camera = foundCamera;
+                        } else {
+                            throw new Error(`Camera ${cameraId} not found in database`);
+                        }
+                    }
+                    
+                    // Get stream status to add session info
+                    const streamsResponse = await fetch(`${API_BASE}/api/streams/status`);
+                    const streamsData = await streamsResponse.json();
+                    
+                    if (streamsData.success) {
+                        const persistentStreams = streamsData.persistent_streams?.persistent_streams || {};
+                        const cameraIdStr = cameraId.toString();
+                        
+                        if (persistentStreams[cameraIdStr]) {
+                            const streamInfo = persistentStreams[cameraIdStr];
+                            camera.sessionId = streamInfo.session_id;
+                            camera.webrtc_url = streamInfo.webrtc_url;
+                            camera.status = streamInfo.status === 'active' ? 'online' : 'offline';
+                        } else {
+                            camera.status = 'offline';
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch camera data:', error);
+                    showStatus(`Failed to load camera data: ${error.message}`, 'error');
+                    document.getElementById('camera-title').textContent = `Camera ${cameraId} - Error`;
+                    return;
+                }
+            }
+
+            // Update page title and header
+            const cameraName = camera.name || `Camera ${cameraId}`;
+            document.getElementById('camera-title').textContent = cameraName;
+            document.getElementById('camera-id').textContent = `ID: ${cameraId}`;
+            document.title = cameraName;
+
+            // Update status badge
+            updateStatusBadge(camera.status || 'offline');
+
+            // Set mode select
+            const modeSelect = document.getElementById('mode-select');
+            modeSelect.value = camera.streaming_mode || 'balanced';
+
+            // Update info
+            updateCameraInfo();
+
+            // Auto-start stream
+            setTimeout(() => {
+                startStream();
+            }, 500);
+
+            // Update tracking stats periodically
+            setInterval(updateTrackingStats, 3000);
+        }
+
+        // Update status badge
+        function updateStatusBadge(status) {
+            const badge = document.getElementById('camera-status');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            
+            badge.classList.remove('bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700', 'bg-orange-100', 'text-orange-700', 'bg-gray-100', 'text-gray-700');
+            statusDot.classList.remove('connected', 'connecting', 'disconnected');
+            
+            switch(status?.toLowerCase()) {
+                case 'online':
+                case 'connected':
+                    badge.classList.add('bg-green-100', 'text-green-700');
+                    badge.textContent = 'ONLINE';
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Connected';
+                    break;
+                case 'offline':
+                case 'disconnected':
+                    badge.classList.add('bg-red-100', 'text-red-700');
+                    badge.textContent = 'OFFLINE';
+                    statusDot.classList.add('disconnected');
+                    statusText.textContent = 'Disconnected';
+                    break;
+                case 'connecting':
+                    badge.classList.add('bg-orange-100', 'text-orange-700');
+                    badge.textContent = 'CONNECTING';
+                    statusDot.classList.add('connecting');
+                    statusText.textContent = 'Connecting';
+                    break;
+                default:
+                    badge.classList.add('bg-gray-100', 'text-gray-700');
+                    badge.textContent = 'UNKNOWN';
+                    statusDot.classList.add('disconnected');
+                    statusText.textContent = 'Unknown';
+            }
+        }
+
+        // Update camera info
+        function updateCameraInfo() {
+            document.getElementById('current-mode').textContent = camera.streaming_mode || 'live';
+            document.getElementById('analysis-status').textContent = camera.analysis_enabled !== false ? 'Enabled' : 'Disabled';
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info', duration = 5000) {
+            const statusElement = document.getElementById(`status-${type}`);
+            statusElement.textContent = message;
+            statusElement.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusElement.classList.add('hidden');
+            }, duration);
+        }
+
+        // Start stream
+        async function startStream() {
+            try {
+                const startBtn = document.getElementById('start-btn');
+                const stopBtn = document.getElementById('stop-btn');
+                startBtn.disabled = true;
+                
+                showStatus('Starting camera stream...', 'info');
+                updateStatusBadge('connecting');
+
+                // First, try to get fresh camera data from the API
+                try {
+                    const cameraResponse = await fetch(`${API_BASE}/api/cameras/${cameraId}`);
+                    const cameraData = await cameraResponse.json();
+                    
+                    if (cameraData.success && cameraData.camera) {
+                        camera = cameraData.camera;
+                        console.log('Updated camera data:', camera);
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch fresh camera data:', error);
+                }
+
+                if (!camera.webrtc_url || !camera.sessionId) {
+                    // Try to create a stream if it doesn't exist
+                    showStatus('Creating new stream session...', 'info');
+                    const createResponse = await fetch(`${API_BASE}/api/cameras/${cameraId}/stream/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ streaming_mode: camera.streaming_mode || 'balanced' })
+                    });
+                    
+                    const createData = await createResponse.json();
+                    
+                    if (createData.success) {
+                        camera.webrtc_url = createData.webrtc_url;
+                        camera.sessionId = createData.session_id;
+                        showStatus('Stream session created', 'success');
+                    } else {
+                        throw new Error('No WebRTC stream available and could not create one');
+                    }
+                }
+
+                // Create peer connection
+                const pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // Handle incoming stream
+                pc.ontrack = (event) => {
+                    console.log('Received video track:', event.streams[0]);
+                    const video = document.createElement('video');
+                    video.srcObject = event.streams[0];
+                    video.autoplay = true;
+                    video.playsInline = true;
+                    video.muted = true;
+                    video.className = 'video-stream';
+
+                    const container = document.getElementById('video-container');
+                    container.innerHTML = '';
+                    container.appendChild(video);
+
+                    document.getElementById('live-indicator').style.display = 'block';
+                    stopBtn.disabled = false;
+                    updateStatusBadge('connected');
+                    showStatus('Stream started successfully', 'success');
+                };
+
+                // Handle connection state
+                pc.onconnectionstatechange = () => {
+                    console.log('Connection state:', pc.connectionState);
+                    if (pc.connectionState === 'failed') {
+                        showStatus('Connection failed', 'error');
+                        updateStatusBadge('disconnected');
+                    } else if (pc.connectionState === 'connected') {
+                        updateStatusBadge('connected');
+                    }
+                };
+
+                // Request stream
+                const response = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/offer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                }
+
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to get stream offer');
+                }
+
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                // Send answer
+                const answerResponse = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/answer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sdp: answer.sdp, type: answer.type })
+                });
+
+                if (!answerResponse.ok) {
+                    throw new Error(`HTTP ${answerResponse.status}: ${await answerResponse.text()}`);
+                }
+
+                const answerData = await answerResponse.json();
+                if (!answerData.success) {
+                    throw new Error(answerData.error || 'Failed to process answer');
+                }
+
+                peerConnection = pc;
+
+            } catch (error) {
+                showStatus(`Failed to start stream: ${error.message}`, 'error');
+                console.error('Error starting stream:', error);
+                document.getElementById('start-btn').disabled = false;
+                updateStatusBadge('disconnected');
+            }
+        }
+
+        // Stop stream
+        async function stopStream() {
+            try {
+                if (peerConnection) {
+                    peerConnection.close();
+                    peerConnection = null;
+                }
+
+                const container = document.getElementById('video-container');
+                container.innerHTML = `
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                        <svg class="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <p class="text-lg font-medium">Stream stopped</p>
+                    </div>
+                `;
+
+                document.getElementById('live-indicator').style.display = 'none';
+                document.getElementById('start-btn').disabled = false;
+                document.getElementById('stop-btn').disabled = true;
+                updateStatusBadge('offline');
+                showStatus('Stream stopped', 'info');
+
+            } catch (error) {
+                showStatus(`Failed to stop stream: ${error.message}`, 'error');
+                console.error('Error stopping stream:', error);
+            }
+        }
+
+        // Change streaming mode
+        async function changeMode() {
+            try {
+                const modeSelect = document.getElementById('mode-select');
+                const selectedMode = modeSelect.value;
+
+                showStatus(`Changing mode to ${selectedMode}...`, 'info');
+
+                // Stop existing stream
+                await stopStream();
+
+                // Call API to change mode
+                const response = await fetch(`${API_BASE}/api/cameras/${cameraId}/stream/mode`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ streaming_mode: selectedMode })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    camera.streaming_mode = selectedMode;
+                    camera.analysis_enabled = selectedMode !== 'live';
+                    updateCameraInfo();
+                    showStatus(`Mode changed to ${selectedMode}`, 'success');
+
+                    // Restart stream
+                    setTimeout(() => startStream(), 1000);
+                } else {
+                    throw new Error(data.error || 'Failed to change mode');
+                }
+
+            } catch (error) {
+                showStatus(`Failed to change mode: ${error.message}`, 'error');
+                console.error('Error changing mode:', error);
+            }
+        }
+
+        // Capture snapshot
+        function captureSnapshot() {
+            const video = document.querySelector('video');
+            if (!video) {
+                showStatus('No active video stream to capture', 'error');
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `camera-${cameraId}-${Date.now()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showStatus('Snapshot captured', 'success');
+            });
+        }
+
+        // Toggle fullscreen
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Update tracking stats
+        async function updateTrackingStats() {
+            try {
+                const response = await fetch(`${API_BASE}/api/tracking/summary`);
+                const data = await response.json();
+
+                if (data.success && data.cameras) {
+                    const cameraStats = data.cameras.find(c => c.camera_id == cameraId);
+                    if (cameraStats) {
+                        document.getElementById('people-count').textContent = cameraStats.current_people || 0;
+                        document.getElementById('tracked-count').textContent = cameraStats.total_tracked || 0;
+                    }
+                }
+            } catch (error) {
+                console.debug('Could not update tracking stats:', error);
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (peerConnection) {
+                peerConnection.close();
+            }
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', initializePage);
+    </script>
+</body>
+</html>

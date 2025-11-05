@@ -4,500 +4,208 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Security Camera Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sf-pro': ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'SF Pro Text', 'system-ui', 'sans-serif']
+                    },
+                    colors: {
+                        'apple-gray': {
+                            50: '#f9fafb',
+                            100: '#f3f4f6',
+                            200: '#e5e7eb',
+                            300: '#d1d5db',
+                            400: '#9ca3af',
+                            500: '#6b7280',
+                            600: '#4b5563',
+                            700: '#374151',
+                            800: '#1f2937',
+                            900: '#111827',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
         * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
-
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
         }
-
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1rem 2rem;
-            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .header h1 {
-            color: #2c3e50;
-            font-size: 2rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .header .subtitle {
-            color: #7f8c8d;
-            font-size: 0.9rem;
-            margin-top: 0.25rem;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .controls {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-        }
-
-        .controls h2 {
-            margin-bottom: 1rem;
-            color: #2c3e50;
-            font-size: 1.2rem;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            text-decoration: none;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #10b981, #047857);
-            color: white;
-        }
-
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
-        }
-
-        .btn-danger {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .camera-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 2rem;
-        }
-
-        .camera-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .camera-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
-        }
-
-        .camera-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .camera-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .camera-status {
-            font-size: 0.8rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-weight: 500;
-        }
-
-        .status-online {
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .status-offline {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .status-connecting {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .video-container {
-            position: relative;
-            background: #000;
-            min-height: 240px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
+        
         .video-stream {
             width: 100%;
-            height: auto;
-            max-height: 300px;
+            height: 100%;
             object-fit: cover;
-        }
-
-        .video-placeholder {
-            color: #6b7280;
-            text-align: center;
-            padding: 2rem;
-        }
-
-        .video-overlay {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 0.5rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
-        }
-
-        .camera-controls {
-            padding: 1.5rem;
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-        }
-
-        .camera-info {
-            padding: 1rem 1.5rem;
-            background: #f9fafb;
-            border-top: 1px solid #e5e7eb;
-            font-size: 0.9rem;
-            color: #6b7280;
-        }
-
-        .info-item {
-            margin-bottom: 0.5rem;
-        }
-
-        .status-bar {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1rem 2rem;
             border-radius: 12px;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
-
-        .status-message {
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-            display: none;
+        
+        .fullscreen-video-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
-
-        .status-success {
-            background: #d1fae5;
-            color: #065f46;
-            border: 1px solid #a7f3d0;
-        }
-
-        .status-error {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fca5a5;
-        }
-
-        .status-info {
-            background: #dbeafe;
-            color: #1e40af;
-            border: 1px solid #93c5fd;
-        }
-
+        
         .loading-spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid #f3f4f6;
-            border-top: 4px solid #3b82f6;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #0071e3;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
-
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #3b82f6;
-        }
-
-        .stat-label {
-            color: #6b7280;
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-            
-            .header {
-                padding: 1rem;
-            }
-            
-            .camera-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .button-group {
-                flex-direction: column;
-            }
-        }
         
-        /* Fullscreen Modal Styles */
-        .fullscreen-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-            backdrop-filter: blur(5px);
-        }
-        
-        .fullscreen-content {
-            width: 95vw;
-            height: 95vh;
-            background: #1a1a1a;
-            border-radius: 10px;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-        }
-        
-        .fullscreen-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #333;
-            background: #2a2a2a;
-            border-radius: 10px 10px 0 0;
-        }
-        
-        .fullscreen-title {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-        
-        .close-btn {
-            background: #ef4444;
-            color: white;
-            border: none;
+        .status-dot {
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            font-size: 1.2rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.3s;
+            display: inline-block;
+            margin-right: 6px;
         }
         
-        .close-btn:hover {
-            background: #dc2626;
+        .status-dot.connected {
+            background-color: #34c759;
         }
         
-        .fullscreen-video-container {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #000;
-            border-radius: 0 0 10px 10px;
-            overflow: hidden;
+        .status-dot.connecting {
+            background-color: #ff9500;
+            animation: pulse 1.5s ease-in-out infinite;
         }
         
-        .fullscreen-placeholder {
-            text-align: center;
-            color: #666;
-            font-size: 1.5rem;
+        .status-dot.disconnected {
+            background-color: #ff3b30;
         }
         
-        .fullscreen-placeholder div {
-            font-size: 4rem;
-            margin-bottom: 1rem;
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
         
-        .fullscreen-video-stream {
-            max-width: 100%;
-            max-height: 100%;
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
         }
         
-        .fullscreen-controls {
-            padding: 1rem 1.5rem;
-            background: #2a2a2a;
-            border-top: 1px solid #333;
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            align-items: center;
+        .card-shadow {
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
         }
         
-        .fullscreen-controls .btn {
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
+        .card-shadow:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.08);
+        }
+        
+        button {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        button:active {
+            transform: scale(0.97);
         }
     </style>
 </head>
-<body>
-    <div class="header">
-        <h1>🔒 Security Camera Dashboard</h1>
-        <div class="subtitle">Real-time monitoring and control system</div>
-    </div>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="glass-effect border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-[1400px] mx-auto px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-semibold text-gray-900 tracking-tight">
+                        Security Cameras
+                    </h1>
+                    <p class="text-sm text-gray-500 mt-1 font-medium">Real-time monitoring system</p>
+                </div>
+                <div id="header-status" class="flex items-center gap-2 text-sm font-medium">
+                    <span class="status-dot connecting"></span>
+                    <span class="text-gray-600">Connecting</span>
+                </div>
+            </div>
+        </div>
+    </header>
 
-    <div class="container">
+    <main class="max-w-[1400px] mx-auto px-8 py-8">
         <!-- Status Bar -->
-        <div class="status-bar">
-            <div id="connection-status">
-                <strong>Connection Status:</strong> 
-                <span id="status-indicator">🔄 Connecting...</span>
+        <div class="glass-effect rounded-2xl p-5 mb-6 card-shadow border border-gray-200">
+            <div class="flex items-center gap-3">
+                <span class="text-sm font-semibold text-gray-700">Connection Status</span>
+                <span id="status-indicator" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                    <span class="status-dot connecting"></span>Connecting
+                </span>
             </div>
         </div>
 
         <!-- Statistics -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-number" id="total-cameras">0</div>
-                <div class="stat-label">Total Cameras</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="glass-effect rounded-xl p-6 card-shadow border border-gray-200">
+                <div class="text-4xl font-bold text-gray-900 mb-1" id="total-cameras">0</div>
+                <div class="text-gray-600 text-xs font-semibold uppercase tracking-wider">Total Cameras</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number" id="online-cameras">0</div>
-                <div class="stat-label">Online Cameras</div>
+            <div class="glass-effect rounded-xl p-6 card-shadow border border-gray-200">
+                <div class="text-4xl font-bold text-green-600 mb-1" id="online-cameras">0</div>
+                <div class="text-gray-600 text-xs font-semibold uppercase tracking-wider">Online</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number" id="streaming-cameras">0</div>
-                <div class="stat-label">Active Streams</div>
+            <div class="glass-effect rounded-xl p-6 card-shadow border border-gray-200">
+                <div class="text-4xl font-bold text-blue-600 mb-1" id="streaming-cameras">0</div>
+                <div class="text-gray-600 text-xs font-semibold uppercase tracking-wider">Active Streams</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number" id="system-uptime">00:00:00</div>
-                <div class="stat-label">System Uptime</div>
+            <div class="glass-effect rounded-xl p-6 card-shadow border border-gray-200">
+                <div class="text-4xl font-bold text-gray-900 mb-1" id="system-uptime">00:00:00</div>
+                <div class="text-gray-600 text-xs font-semibold uppercase tracking-wider">Uptime</div>
             </div>
         </div>
 
         <!-- Global Controls -->
-        <div class="controls">
-            <h2>🎛️ Global Controls</h2>
-            <div class="button-group">
-                <button class="btn btn-success" onclick="startAllStreams()">
-                    ▶️ Start All Streams
+        <div class="glass-effect rounded-2xl p-6 mb-6 card-shadow border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">
+                Global Controls
+            </h2>
+            <div class="flex flex-wrap gap-2">
+                <button class="bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold" onclick="startAllStreams()">
+                    Start All
                 </button>
-                <button class="btn btn-danger" onclick="stopAllStreams()">
-                    ⏹️ Stop All Streams
+                <button class="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold" onclick="stopAllStreams()">
+                    Stop All
                 </button>
-                <button class="btn btn-primary" onclick="refreshCameras()">
-                    🔄 Refresh Cameras
+                <button class="bg-blue-500 hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold" onclick="refreshCameras()">
+                    Refresh
                 </button>
-                <button class="btn btn-warning" onclick="toggleFastMode()">
-                    ⚡ Fast Mode
+                <button class="bg-gray-700 hover:bg-gray-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold" onclick="toggleFastMode()">
+                    Fast Mode
                 </button>
-                <button class="btn btn-primary" onclick="toggleFullscreen()">
-                    🔳 Toggle Fullscreen
+                <button class="bg-gray-700 hover:bg-gray-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold" onclick="toggleFullscreen()">
+                    Fullscreen
                 </button>
             </div>
         </div>
 
         <!-- Status Messages -->
-        <div id="status-success" class="status-message status-success"></div>
-        <div id="status-error" class="status-message status-error"></div>
-        <div id="status-info" class="status-message status-info"></div>
+        <div id="status-success" class="glass-effect border border-green-300 text-green-800 px-5 py-4 rounded-xl mb-4 hidden">
+        </div>
+        <div id="status-error" class="glass-effect border border-red-300 text-red-800 px-5 py-4 rounded-xl mb-4 hidden">
+        </div>
+        <div id="status-info" class="glass-effect border border-blue-300 text-blue-800 px-5 py-4 rounded-xl mb-4 hidden">
+        </div>
 
         <!-- Camera Grid -->
-        <div id="camera-grid" class="camera-grid">
-            <div style="text-align: center; padding: 2rem;">
-                <div class="loading-spinner" style="margin: 0 auto 1rem;"></div>
-                <p>Loading cameras...</p>
+        <div id="camera-grid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div class="col-span-full text-center py-12">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <p class="text-gray-600 font-medium">Loading cameras</p>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
         // Configuration
@@ -506,7 +214,6 @@
         // Global state
         let cameras = [];
         let peerConnections = {};
-        let fullscreenPeerConnection = null;
         let systemStartTime = Date.now();
         
         // Update system uptime
@@ -524,25 +231,45 @@
         function showStatus(message, type = 'info', duration = 5000) {
             const statusElement = document.getElementById(`status-${type}`);
             statusElement.textContent = message;
-            statusElement.style.display = 'block';
+            statusElement.classList.remove('hidden');
             
             setTimeout(() => {
-                statusElement.style.display = 'none';
+                statusElement.classList.add('hidden');
             }, duration);
         }
 
         // Update connection status
         function updateConnectionStatus(status, message) {
             const indicator = document.getElementById('status-indicator');
+            const headerStatus = document.getElementById('header-status');
+            
+            indicator.classList.remove('bg-gray-100', 'text-gray-600', 'bg-green-50', 'text-green-700', 'bg-red-50', 'text-red-700', 'bg-orange-50', 'text-orange-700');
+            
+            let statusDot = '';
             switch(status) {
                 case 'connected':
-                    indicator.innerHTML = '🟢 Connected';
+                    statusDot = '<span class="status-dot connected"></span>';
+                    indicator.innerHTML = statusDot + 'Connected';
+                    indicator.classList.add('bg-green-50', 'text-green-700');
+                    if (headerStatus) {
+                        headerStatus.innerHTML = '<span class="status-dot connected"></span><span class="text-gray-600">Connected</span>';
+                    }
                     break;
                 case 'disconnected':
-                    indicator.innerHTML = '🔴 Disconnected';
+                    statusDot = '<span class="status-dot disconnected"></span>';
+                    indicator.innerHTML = statusDot + 'Disconnected';
+                    indicator.classList.add('bg-red-50', 'text-red-700');
+                    if (headerStatus) {
+                        headerStatus.innerHTML = '<span class="status-dot disconnected"></span><span class="text-gray-600">Disconnected</span>';
+                    }
                     break;
                 case 'connecting':
-                    indicator.innerHTML = '🟡 Connecting...';
+                    statusDot = '<span class="status-dot connecting"></span>';
+                    indicator.innerHTML = statusDot + 'Connecting';
+                    indicator.classList.add('bg-orange-50', 'text-orange-700');
+                    if (headerStatus) {
+                        headerStatus.innerHTML = '<span class="status-dot connecting"></span><span class="text-gray-600">Connecting</span>';
+                    }
                     break;
             }
         }
@@ -649,11 +376,14 @@
             
             if (cameras.length === 0) {
                 grid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
-                        <h3>No cameras found</h3>
-                        <p>No cameras are currently available. Please check your camera configuration.</p>
-                        <button class="btn btn-primary" onclick="refreshCameras()" style="margin-top: 1rem;">
-                            🔄 Retry
+                    <div class="col-span-full text-center py-16">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <h3 class="text-xl font-semibold text-gray-900 mb-2">No cameras found</h3>
+                        <p class="text-gray-600 mb-6 max-w-md mx-auto">No cameras are currently available. Please check your camera configuration.</p>
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-semibold" onclick="refreshCameras()">
+                            Retry
                         </button>
                     </div>
                 `;
@@ -673,55 +403,60 @@
             const currentMode = camera.streaming_mode || 'balanced';
             
             return `
-                    <div class="camera-card" id="camera-${cameraId}" data-session-id="${sessionId}" onclick="openFullscreenView('${cameraId}')">
-                        <div class="camera-header">
-                            <div class="camera-title">
-                                📹 ${cameraName}
-                                <span class="camera-status ${getStatusClass(cameraStatus)}">
-                                    ${cameraStatus.toUpperCase()}
-                                </span>
+                <div class="glass-effect rounded-2xl card-shadow border border-gray-200 hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden" id="camera-${cameraId}" data-session-id="${sessionId}" onclick="openFullscreenView('${cameraId}')">
+                    <div class="p-5 pb-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2">
+                                <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <span class="font-semibold text-gray-900">${cameraName}</span>
                             </div>
-                        </div>                    <div class="video-container" id="video-container-${cameraId}">
-                        <div class="video-placeholder">
-                            <div>📷</div>
-                            <p>Click "Start Stream" to view camera feed</p>
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusClass(cameraStatus)}">
+                                ${cameraStatus}
+                            </span>
                         </div>
-                        <div class="video-overlay" id="video-overlay-${cameraId}" style="display: none;">
+                    </div>
+                    
+                    <div class="relative h-48 bg-gray-100 mx-5 mb-4 rounded-xl overflow-hidden" id="video-container-${cameraId}">
+                        <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                            <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <p class="text-sm font-medium">Tap to view feed</p>
+                        </div>
+                        <div class="absolute top-3 right-3 bg-red-500 text-white px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide" id="video-overlay-${cameraId}" style="display: none;">
                             Live
                         </div>
                     </div>
                     
-                    <div class="camera-controls">
-                        <select id="mode-select-${cameraId}" class="btn" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem;">
-                            <option value="live" ${currentMode === 'live' ? 'selected' : ''}>⚡ Live (Fast)</option>
-                            <option value="balanced" ${currentMode === 'balanced' ? 'selected' : ''}>⚖️ Balanced</option>
-                            <option value="analysis" ${currentMode === 'analysis' ? 'selected' : ''}>🔍 Analysis</option>
+                    <div class="px-5 pb-4 flex flex-wrap gap-2">
+                        <select id="mode-select-${cameraId}" class="bg-gray-100 text-gray-700 border border-gray-300 px-3 py-2 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" onclick="event.stopPropagation()">
+                            <option value="live" ${currentMode === 'live' ? 'selected' : ''}>Live</option>
+                            <option value="balanced" ${currentMode === 'balanced' ? 'selected' : ''}>Balanced</option>
+                            <option value="analysis" ${currentMode === 'analysis' ? 'selected' : ''}>Analysis</option>
                         </select>
-                        <button class="btn btn-success" id="start-btn-${cameraId}" onclick="startStream('${cameraId}')">
-                            ▶️ Start Stream
+                        <button class="bg-green-500 hover:bg-green-600 text-white px-3.5 py-2 rounded-lg font-semibold transition-all text-xs" id="start-btn-${cameraId}" onclick="event.stopPropagation(); startStream('${cameraId}')">
+                            Start
                         </button>
-                        <button class="btn btn-danger" id="stop-btn-${cameraId}" onclick="stopStream('${cameraId}')" disabled>
-                            ⏹️ Stop Stream
+                        <button class="bg-red-500 hover:bg-red-600 text-white px-3.5 py-2 rounded-lg font-semibold transition-all text-xs" id="stop-btn-${cameraId}" onclick="event.stopPropagation(); stopStream('${cameraId}')" disabled>
+                            Stop
                         </button>
-                        <button class="btn btn-primary" onclick="changeStreamingMode('${cameraId}')">
-                            🔄 Change Mode
+                        <button class="bg-blue-500 hover:bg-blue-600 text-white px-3.5 py-2 rounded-lg font-semibold transition-all text-xs" onclick="event.stopPropagation(); changeStreamingMode('${cameraId}')">
+                            Mode
                         </button>
-                        <button class="btn btn-primary" onclick="captureSnapshot('${cameraId}')">
-                            📸 Snapshot
+                        <button class="bg-gray-600 hover:bg-gray-700 text-white px-3.5 py-2 rounded-lg font-semibold transition-all text-xs" onclick="event.stopPropagation(); captureSnapshot('${cameraId}')">
+                            Snapshot
                         </button>
                     </div>
                     
-                    <div class="camera-info">
-                        <div class="info-item"><strong>Camera ID:</strong> ${cameraId}</div>
-                        <div class="info-item"><strong>Status:</strong> ${cameraStatus}</div>
-                        <div class="info-item"><strong>Streaming Mode:</strong> ${camera.streaming_mode || 'live'}</div>
-                        <div class="info-item"><strong>Analysis Enabled:</strong> ${camera.analysis_enabled !== false ? 'Yes' : 'No'}</div>
-                        <div class="info-item"><strong>Current People:</strong> <span id="people-count-${cameraId}">0</span></div>
-                        <div class="info-item"><strong>Total Tracked:</strong> <span id="tracked-count-${cameraId}">0</span></div>
-                        <div class="info-item"><strong>Session ID:</strong> ${sessionId || 'Not available'}</div>
-                        <div class="info-item"><strong>WebRTC URL:</strong> ${camera.webrtc_url || 'Not available'}</div>
-                        <div class="info-item"><strong>RTSP URL:</strong> ${rtspUrl || 'Not available'}</div>
-                        <div class="info-item"><strong>Resolution:</strong> ${camera.resolution || 'Auto'}</div>
+                    <div class="px-5 pb-5 bg-gray-50 space-y-2 text-xs" onclick="event.stopPropagation()">
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">Camera ID</span> <span class="text-gray-900 font-semibold">${cameraId}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">Status</span> <span class="text-gray-900 font-semibold">${cameraStatus}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">Mode</span> <span class="text-gray-900 font-semibold">${camera.streaming_mode || 'live'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">Analysis</span> <span class="text-gray-900 font-semibold">${camera.analysis_enabled !== false ? 'Enabled' : 'Disabled'}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">People</span> <span id="people-count-${cameraId}" class="text-gray-900 font-semibold">0</span></div>
+                        <div class="flex justify-between"><span class="text-gray-600 font-medium">Tracked</span> <span id="tracked-count-${cameraId}" class="text-gray-900 font-semibold">0</span></div>
                     </div>
                 </div>
             `;
@@ -732,14 +467,14 @@
             switch(status?.toLowerCase()) {
                 case 'online':
                 case 'connected':
-                    return 'status-online';
+                    return 'bg-green-100 text-green-700';
                 case 'offline':
                 case 'disconnected':
-                    return 'status-offline';
+                    return 'bg-red-100 text-red-700';
                 case 'connecting':
-                    return 'status-connecting';
+                    return 'bg-orange-100 text-orange-700';
                 default:
-                    return 'status-offline';
+                    return 'bg-gray-100 text-gray-700';
             }
         }
 
@@ -896,9 +631,11 @@
                 const container = document.getElementById(`video-container-${cameraId}`);
                 if (container) {
                     container.innerHTML = `
-                        <div class="video-placeholder">
-                            <div>📷</div>
-                            <p>Click "Start Stream" to view camera feed</p>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                            <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <p class="text-sm font-medium">Tap to view feed</p>
                         </div>
                     `;
                 }
@@ -975,16 +712,19 @@
 
         // Global control functions
         async function startAllStreams() {
-            showStatus('Starting all camera streams...', 'info');
+            showStatus('Opening all camera views...', 'info');
             
             for (const camera of cameras) {
                 const cameraId = camera.id || camera.camera_id;
-                if (cameraId && !peerConnections[cameraId]) {
-                    await startStream(cameraId);
-                    // Small delay to prevent overwhelming the server
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                if (cameraId) {
+                    // Open camera view in new tab/window
+                    await openFullscreenView(cameraId);
+                    // Small delay to prevent overwhelming the browser
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
             }
+            
+            showStatus(`Opened ${cameras.length} camera views`, 'success');
         }
 
         async function stopAllStreams() {
@@ -1009,273 +749,99 @@
             }
         }
 
+        // Open fullscreen view for a camera
+        async function openFullscreenView(cameraId) {
+            try {
+                // Get camera from local array first as fallback
+                let camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
+                
+                // Try to get fresh camera data from API
+                try {
+                    const response = await fetch(`${API_BASE}/api/cameras/${cameraId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.camera) {
+                            camera = data.camera;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch fresh camera data, using cached data:', error);
+                }
+                
+                if (!camera) {
+                    showStatus(`Camera ${cameraId} not found`, 'error');
+                    return;
+                }
+                
+                // Get stream status to add session info
+                try {
+                    const streamsResponse = await fetch(`${API_BASE}/api/streams/status`);
+                    const streamsData = await streamsResponse.json();
+                    
+                    if (streamsData.success) {
+                        const persistentStreams = streamsData.persistent_streams?.persistent_streams || {};
+                        const cameraIdStr = cameraId.toString();
+                        
+                        if (persistentStreams[cameraIdStr]) {
+                            const streamInfo = persistentStreams[cameraIdStr];
+                            camera.sessionId = streamInfo.session_id;
+                            camera.webrtc_url = streamInfo.webrtc_url;
+                            camera.status = streamInfo.status === 'active' ? 'online' : 'offline';
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch stream status:', error);
+                }
+
+                // Store camera data in localStorage for the new page
+                localStorage.setItem('selectedCamera', JSON.stringify(camera));
+                localStorage.setItem('apiBase', API_BASE);
+                
+                // Open new page
+                window.open('camera_view.html?id=' + cameraId, '_blank');
+                
+            } catch (error) {
+                showStatus(`Failed to open camera view: ${error.message}`, 'error');
+                console.error('Error opening camera view:', error);
+            }
+        }
+
         function toggleFastMode() {
-            showStatus('⚡ Switching to Fast Mode - lower quality for better performance', 'info');
+            showStatus('Switching to Fast Mode - lower quality for better performance', 'info');
             // Fast mode is already enabled by default with the optimized camera settings
             // This function could be extended to dynamically switch streaming modes
             alert('Fast Mode Active!\n\nCamera Settings:\n• Resolution: 640x480 (VGA)\n• Frame Rate: 15 FPS\n• Quality: Medium\n• Sub-streams (102, 202, 302, 402)\n\nThis provides much faster streaming than the previous 1920x1080 @ 30 FPS!');
         }
 
-        // Open fullscreen view for a camera
-        async function openFullscreenView(cameraId) {
-            try {
-                // Get camera data
-                const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
-                if (!camera) {
-                    showStatus(`Camera ${cameraId} not found`, 'error');
-                    return;
-                }
-
-                const cameraName = camera.name || `Camera ${cameraId}`;
-                const currentMode = camera.streaming_mode || 'live';
-                
-                // Create fullscreen modal
-                const modal = document.createElement('div');
-                modal.id = 'fullscreen-modal';
-                modal.innerHTML = `
-                    <div class="fullscreen-overlay" onclick="closeFullscreenView()">
-                        <div class="fullscreen-content" onclick="event.stopPropagation()">
-                            <div class="fullscreen-header">
-                                <div class="fullscreen-title">
-                                    📹 ${cameraName}
-                                    <span class="camera-status ${getStatusClass(camera.status || 'offline')}">
-                                        ${camera.status?.toUpperCase() || 'OFFLINE'}
-                                    </span>
-                                </div>
-                                <button class="close-btn" onclick="closeFullscreenView()">✕</button>
-                            </div>
-                            <div class="fullscreen-video-container" id="fullscreen-video-container">
-                                <div class="fullscreen-placeholder">
-                                    <div>📺</div>
-                                    <p>Loading camera feed...</p>
-                                </div>
-                            </div>
-                            <div class="fullscreen-controls">
-                                <select id="fullscreen-mode-select" class="btn" style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem;">
-                                    <option value="live" ${currentMode === 'live' ? 'selected' : ''}>⚡ Live (Fast)</option>
-                                    <option value="balanced" ${currentMode === 'balanced' ? 'selected' : ''}>⚖️ Balanced</option>
-                                    <option value="analysis" ${currentMode === 'analysis' ? 'selected' : ''}>🔍 Analysis</option>
-                                </select>
-                                <button class="btn btn-success" id="fullscreen-start-btn" onclick="startFullscreenStream('${cameraId}')">
-                                    ▶️ Start Stream
-                                </button>
-                                <button class="btn btn-danger" id="fullscreen-stop-btn" onclick="stopFullscreenStream('${cameraId}')" disabled>
-                                    ⏹️ Stop Stream
-                                </button>
-                                <button class="btn btn-primary" onclick="changeFullscreenStreamingMode('${cameraId}')">
-                                    🔄 Change Mode
-                                </button>
-                                <button class="btn btn-primary" onclick="captureFullscreenSnapshot('${cameraId}')">
-                                    📸 Snapshot
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                
-                document.body.appendChild(modal);
-                
-                // Start stream automatically
-                await startFullscreenStream(cameraId);
-                
-            } catch (error) {
-                showStatus(`Failed to open fullscreen view: ${error.message}`, 'error');
-                console.error('Error opening fullscreen view:', error);
+        // Capture snapshot from camera stream
+        function captureSnapshot(cameraId) {
+            const container = document.getElementById(`video-container-${cameraId}`);
+            const video = container?.querySelector('video');
+            
+            if (!video) {
+                showStatus('No active video stream to capture', 'error');
+                return;
             }
-        }
 
-        // Close fullscreen view
-        function closeFullscreenView() {
-            const modal = document.getElementById('fullscreen-modal');
-            if (modal) {
-                // Stop any active fullscreen stream
-                if (fullscreenPeerConnection) {
-                    fullscreenPeerConnection.close();
-                    fullscreenPeerConnection = null;
-                }
-                modal.remove();
-            }
-        }
-
-        // Start stream in fullscreen view
-        async function startFullscreenStream(cameraId) {
             try {
-                const startBtn = document.getElementById('fullscreen-start-btn');
-                if (startBtn) startBtn.disabled = true;
-                
-                showStatus(`Starting fullscreen stream for camera ${cameraId}...`, 'info');
-                
-                // Get camera data
-                const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
-                if (!camera) {
-                    throw new Error(`Camera ${cameraId} not found`);
-                }
-                
-                if (camera.webrtc_url && camera.sessionId) {
-                    console.log(`Starting fullscreen WebRTC stream for camera ${cameraId}`);
-                    
-                    // Create peer connection for fullscreen view
-                    const pc = new RTCPeerConnection({
-                        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                    });
-                    
-                    // Handle incoming stream
-                    pc.ontrack = (event) => {
-                        console.log(`Received fullscreen track for camera ${cameraId}:`, event.streams[0]);
-                        const video = document.createElement('video');
-                        video.srcObject = event.streams[0];
-                        video.autoplay = true;
-                        video.playsInline = true;
-                        video.muted = true;
-                        video.className = 'fullscreen-video-stream';
-                        video.style.width = '100%';
-                        video.style.height = '100%';
-                        video.style.objectFit = 'contain';
-                        
-                        const container = document.getElementById('fullscreen-video-container');
-                        if (container) {
-                            container.innerHTML = '';
-                            container.appendChild(video);
-                        }
-                        
-                        const stopBtn = document.getElementById('fullscreen-stop-btn');
-                        if (stopBtn) stopBtn.disabled = false;
-                        
-                        showStatus(`Fullscreen stream started for camera ${cameraId}`, 'success');
-                    };
-                    
-                    // Handle connection state changes
-                    pc.onconnectionstatechange = () => {
-                        console.log(`Fullscreen camera ${cameraId} connection state:`, pc.connectionState);
-                    };
-                    
-                    // Request stream
-                    const response = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/offer`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-                    }
-                    
-                    const data = await response.json();
-                    if (!data.success) {
-                        throw new Error(data.error || 'Failed to get stream offer');
-                    }
-                    
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    
-                    // Send answer
-                    const answerResponse = await fetch(`${API_BASE}/api/streams/${camera.sessionId}/answer`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sdp: answer.sdp, type: answer.type })
-                    });
-                    
-                    if (!answerResponse.ok) {
-                        throw new Error(`HTTP ${answerResponse.status}: ${await answerResponse.text()}`);
-                    }
-                    
-                    const answerData = await answerResponse.json();
-                    if (!answerData.success) {
-                        throw new Error(answerData.error || 'Failed to process answer');
-                    }
-                    
-                    // Store fullscreen connection
-                    fullscreenPeerConnection = pc;
-                    
-                } else {
-                    throw new Error(`No WebRTC stream available for camera ${cameraId}`);
-                }
-                
-            } catch (error) {
-                showStatus(`Failed to start fullscreen stream: ${error.message}`, 'error');
-                const startBtn = document.getElementById('fullscreen-start-btn');
-                if (startBtn) startBtn.disabled = false;
-                console.error('Error starting fullscreen stream:', error);
-            }
-        }
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
 
-        // Stop fullscreen stream
-        async function stopFullscreenStream(cameraId) {
-            try {
-                if (fullscreenPeerConnection) {
-                    fullscreenPeerConnection.close();
-                    fullscreenPeerConnection = null;
-                    
-                    // Clean up UI
-                    const container = document.getElementById('fullscreen-video-container');
-                    if (container) {
-                        container.innerHTML = `
-                            <div class="fullscreen-placeholder">
-                                <div>📺</div>
-                                <p>Stream stopped</p>
-                            </div>
-                        `;
-                    }
-                    
-                    const startBtn = document.getElementById('fullscreen-start-btn');
-                    if (startBtn) startBtn.disabled = false;
-                    
-                    const stopBtn = document.getElementById('fullscreen-stop-btn');
-                    if (stopBtn) stopBtn.disabled = true;
-                    
-                    showStatus(`Fullscreen stream stopped for camera ${cameraId}`, 'success');
-                }
-            } catch (error) {
-                showStatus(`Failed to stop fullscreen stream: ${error.message}`, 'error');
-                console.error('Error stopping fullscreen stream:', error);
-            }
-        }
-
-                // Change streaming mode in fullscreen view
-        async function changeFullscreenStreamingMode(cameraId) {
-            try {
-                const modeSelect = document.getElementById('fullscreen-mode-select');
-                const selectedMode = modeSelect.value;
-                
-                showStatus(`Changing fullscreen streaming mode for camera ${cameraId} to ${selectedMode}...`, 'info');
-                
-                // Stop existing fullscreen stream
-                await stopFullscreenStream(cameraId);
-                
-                // Call API to change mode
-                const response = await fetch(`${API_BASE}/api/cameras/${cameraId}/stream/mode`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        streaming_mode: selectedMode
-                    })
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `camera-${cameraId}-${Date.now()}.png`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showStatus('Snapshot captured successfully', 'success');
                 });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showStatus(`Fullscreen streaming mode changed to ${selectedMode} for camera ${cameraId}`, 'success');
-                    
-                    // Update camera data
-                    const camera = cameras.find(c => (c.id || c.camera_id) == cameraId);
-                    if (camera) {
-                        camera.streaming_mode = selectedMode;
-                        camera.analysis_enabled = selectedMode !== 'live';
-                    }
-                    
-                    // Refresh camera list and restart stream
-                    await loadCameras();
-                    await startFullscreenStream(cameraId);
-                    
-                } else {
-                    throw new Error(data.error || 'Failed to change fullscreen streaming mode');
-                }
-                
             } catch (error) {
-                showStatus(`Failed to change fullscreen streaming mode: ${error.message}`, 'error');
-                console.error('Error changing fullscreen streaming mode:', error);
+                showStatus(`Failed to capture snapshot: ${error.message}`, 'error');
+                console.error('Error capturing snapshot:', error);
             }
         }
 
@@ -1314,9 +880,6 @@
             Object.values(peerConnections).forEach(connection => {
                 connection.pc.close();
             });
-            if (fullscreenPeerConnection) {
-                fullscreenPeerConnection.close();
-            }
         });
 
         // Start the dashboard when page loads
