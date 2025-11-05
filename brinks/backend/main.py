@@ -30,12 +30,25 @@ try:
     from supervision.tracker.byte_tracker.core import ByteTrack
     from supervision.detection.core import Detections
     DETECTION_AVAILABLE = True
+    BYTETRACK_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: ultralytics or supervision not installed. Detection will be limited. Error: {e}")
     YOLO = None
     ByteTrack = None
     Detections = None
     DETECTION_AVAILABLE = False
+    BYTETRACK_AVAILABLE = False
+
+# Enhanced tracking (hybrid with DeepSORT fallback)
+try:
+    from tracker.deepsort import HybridTracker, EnhancedDetectionTracker
+    ENHANCED_TRACKING_AVAILABLE = True
+    print("✅ Enhanced tracking module loaded")
+except ImportError as e:
+    print(f"⚠️  Enhanced tracking not available: {e}. Using standard ByteTrack.")
+    HybridTracker = None
+    EnhancedDetectionTracker = None
+    ENHANCED_TRACKING_AVAILABLE = False
 
 # Configuration
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -44,11 +57,13 @@ VIOLATION_ACTION_WEBHOOK = os.environ.get("VIOLATION_WEBHOOK", "")
 YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 MAX_OCCUPANCY = int(os.environ.get("MAX_OCCUPANCY", "1"))
 VIOLATION_THRESHOLD = int(os.environ.get("VIOLATION_THRESHOLD", "2"))
+USE_ENHANCED_TRACKING = os.environ.get("USE_ENHANCED_TRACKING", "true").lower() in ["true", "1", "yes"]
 
 # Global state
 redis_client = None
 yolo_model: Optional[Any] = None
 trackers: Dict[str, Any] = {}
+enhanced_trackers: Dict[str, Any] = {}  # For enhanced hybrid trackers
 
 # ByteTrack configuration parameters (for supervision 0.26.1+)
 TRACK_ACTIVATION_THRESHOLD = 0.4
@@ -56,6 +71,15 @@ LOST_TRACK_BUFFER = 30
 MINIMUM_MATCHING_THRESHOLD = 0.8
 FRAME_RATE = 15
 MINIMUM_CONSECUTIVE_FRAMES = 1
+
+# Enhanced tracking configuration
+ENHANCED_TRACK_CONFIG = {
+    "use_deepsort": USE_ENHANCED_TRACKING and ENHANCED_TRACKING_AVAILABLE,
+    "max_age": 30,
+    "n_init": 3,
+    "confidence_threshold": 0.45,
+    "nms_threshold": 0.5
+}
 
 # ============= WebSocket Manager =============
 class ConnectionManager:
@@ -160,7 +184,7 @@ def jpeg_b64(img_bgr: np.ndarray) -> str:
     return ""
 
 def ensure_tracker(camera_id: str) -> Any:
-    """Get or create tracker for camera"""
+    """Get or create tracker for camera (standard ByteTrack)"""
     if camera_id not in trackers:
         trackers[camera_id] = ByteTrack(
             track_activation_threshold=TRACK_ACTIVATION_THRESHOLD,
@@ -170,6 +194,20 @@ def ensure_tracker(camera_id: str) -> Any:
             minimum_consecutive_frames=MINIMUM_CONSECUTIVE_FRAMES
         )
     return trackers[camera_id]
+
+def ensure_enhanced_tracker(camera_id: str) -> Any:
+    """Get or create enhanced hybrid tracker (DeepSORT + ByteTrack)"""
+    if not ENHANCED_TRACKING_AVAILABLE:
+        return ensure_tracker(camera_id)
+    
+    if camera_id not in enhanced_trackers:
+        enhanced_trackers[camera_id] = EnhancedDetectionTracker(
+            confidence_threshold=ENHANCED_TRACK_CONFIG["confidence_threshold"],
+            nms_threshold=ENHANCED_TRACK_CONFIG["nms_threshold"],
+            use_deepsort=ENHANCED_TRACK_CONFIG["use_deepsort"]
+        )
+        print(f"✅ Initialized enhanced tracker for {camera_id}")
+    return enhanced_trackers[camera_id]
 
 def draw_boxes_on_image(
     img_bgr: np.ndarray,
@@ -272,6 +310,7 @@ async def ingest_frame(
 ):
     """
     Ingest frame from camera: detect, track, check violations.
+    Uses enhanced hybrid tracking (DeepSORT + ByteTrack) if available.
     Returns detection results and broadcasts to WebSocket clients.
     """
     try:
@@ -285,6 +324,7 @@ async def ingest_frame(
         occupancy = 0
         rects = []
         frame_b64_annotated = ""
+        tracking_method = "none"
         
         # Run YOLO if model is loaded
         if yolo_model is not None:
@@ -301,20 +341,50 @@ async def ingest_frame(
                     conf = np.empty((0,), dtype=float)
                     cls = np.empty((0,), dtype=int)
                 
-                # Convert to Supervision Detections
-                dets = Detections(xyxy=xyxy, confidence=conf, class_id=cls)
+                # Use enhanced tracking if available, otherwise use standard ByteTrack
+                if USE_ENHANCED_TRACKING and ENHANCED_TRACKING_AVAILABLE:
+                    try:
+                        enhanced_tracker = ensure_enhanced_tracker(camera_id)
+                        tracked_ids, tracked_xyxy = enhanced_tracker.process_detections(
+                            xyxy, conf, img_bgr
+                        )
+                        tracker_ids = tracked_ids.tolist() if len(tracked_ids) > 0 else []
+                        occupancy = len(tracker_ids)
+                        rects = tracked_xyxy.astype(int).tolist() if len(tracked_xyxy) > 0 else []
+                        tracking_method = "enhanced_hybrid"
+                    except Exception as e:
+                        # Fallback to standard ByteTrack
+                        print(f"⚠️  Enhanced tracking failed: {e}. Falling back to ByteTrack.")
+                        dets = Detections(xyxy=xyxy, confidence=conf, class_id=cls)
+                        tracker = ensure_tracker(camera_id)
+                        tracked = tracker.update_with_detections(dets)
+                        tracker_ids = [] if tracked.tracker_id is None else tracked.tracker_id.tolist()
+                        occupancy = len(tracker_ids)
+                        rects = xyxy.astype(int).tolist() if len(xyxy) > 0 else []
+                        tracking_method = "bytetrack_fallback"
+                else:
+                    # Standard ByteTrack tracking
+                    dets = Detections(xyxy=xyxy, confidence=conf, class_id=cls)
+                    tracker = ensure_tracker(camera_id)
+                    tracked = tracker.update_with_detections(dets)
+                    tracker_ids = [] if tracked.tracker_id is None else tracked.tracker_id.tolist()
+                    occupancy = len(tracker_ids)
+                    rects = xyxy.astype(int).tolist() if len(xyxy) > 0 else []
+                    tracking_method = "bytetrack"
                 
-                # Track with ByteTrack
-                tracker = ensure_tracker(camera_id)
-                tracked = tracker.update_with_detections(dets)
+                # Draw boxes on frame for preview (using standard method)
+                if len(xyxy) > 0:
+                    dets_display = Detections(
+                        xyxy=xyxy, 
+                        confidence=conf, 
+                        class_id=cls,
+                        tracker_id=np.array(tracker_ids[:len(xyxy)]) if tracker_ids else None
+                    )
+                    img_annotated = draw_boxes_on_image(img_bgr, dets_display, 
+                                                       tracker_ids=np.array(tracker_ids[:len(xyxy)]) if tracker_ids else None)
+                else:
+                    img_annotated = img_bgr.copy()
                 
-                # Extract tracker IDs
-                tracker_ids = [] if tracked.tracker_id is None else tracked.tracker_id.tolist()
-                occupancy = len(tracker_ids)
-                rects = xyxy.astype(int).tolist() if len(xyxy) > 0 else []
-                
-                # Draw boxes on frame for preview
-                img_annotated = draw_boxes_on_image(img_bgr, tracked, tracked.tracker_id)
                 frame_b64_annotated = jpeg_b64(img_annotated)
                 
             except Exception as e:
@@ -326,6 +396,7 @@ async def ingest_frame(
                 "occupancy": str(occupancy),
                 "last_update": str(time.time()),
                 "camera_id": camera_id,
+                "tracking_method": tracking_method,
                 "last_tracker_ids": ",".join(map(str, tracker_ids))
             })
         
@@ -338,6 +409,7 @@ async def ingest_frame(
             "objects": tracker_ids,
             "rects": rects,
             "ts": time.time(),
+            "tracking_method": tracking_method,
             "frame_b64": frame_b64_annotated
         }
         
@@ -352,6 +424,7 @@ async def ingest_frame(
             "occupancy": occupancy,
             "objects": tracker_ids,
             "count_boxes": len(rects),
+            "tracking_method": tracking_method,
             "status": "violation" if occupancy > MAX_OCCUPANCY else "ok"
         }
     
@@ -432,6 +505,42 @@ async def health():
         "redis": "connected" if redis_client else "disconnected",
         "yolo": "loaded" if yolo_model else "not loaded",
         "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.get("/config")
+async def get_config():
+    """Get system configuration and tracking info"""
+    return {
+        "tracking": {
+            "method": "enhanced_hybrid" if (USE_ENHANCED_TRACKING and ENHANCED_TRACKING_AVAILABLE) else "standard_bytetrack",
+            "enhanced_available": ENHANCED_TRACKING_AVAILABLE,
+            "enhanced_enabled": USE_ENHANCED_TRACKING and ENHANCED_TRACKING_AVAILABLE,
+            "deepsort_available": ENHANCED_TRACKING_AVAILABLE,
+            "bytetrack_available": BYTETRACK_AVAILABLE,
+            "config": {
+                "confidence_threshold": ENHANCED_TRACK_CONFIG["confidence_threshold"],
+                "nms_threshold": ENHANCED_TRACK_CONFIG["nms_threshold"],
+                "max_age": ENHANCED_TRACK_CONFIG["max_age"],
+                "n_init": ENHANCED_TRACK_CONFIG["n_init"]
+            }
+        },
+        "detection": {
+            "model": YOLO_MODEL_PATH,
+            "confidence_threshold": TRACK_ACTIVATION_THRESHOLD,
+            "yolo_loaded": yolo_model is not None
+        },
+        "occupancy": {
+            "max_allowed": MAX_OCCUPANCY,
+            "violation_threshold": VIOLATION_THRESHOLD
+        },
+        "active_trackers": {
+            "standard": len(trackers),
+            "enhanced": len(enhanced_trackers)
+        },
+        "system": {
+            "room_id": ROOM_ID,
+            "redis_connected": redis_client is not None
+        }
     }
 
 @app.get("/")

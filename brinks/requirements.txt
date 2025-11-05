@@ -11,6 +11,8 @@ pillow==10.1.0
 # Detection & Tracking
 ultralytics==8.3.225
 supervision==0.26.1
+deep-sort-pytorch==1.6.0
+torch-reid==0.5.0
 
 # PyTorch (CPU version - change for GPU)
 # For CPU-only:
