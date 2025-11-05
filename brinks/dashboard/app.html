@@ -40,6 +40,8 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: high-quality;
         }
 
         .status-indicator {
@@ -314,6 +316,21 @@
                         <span class="status-indicator status-offline"></span>
                     </div>
                 </div>
+
+                <!-- Camera 5 (Phone) -->
+                <div class="camera-tile" onclick="selectCamera('camera5')">
+                    <div class="camera-preview">
+                        <img id="thumb-camera5" src="" alt="Camera 5" style="display: none; width: 100%; height: 100%; object-fit: cover;">
+                        <div id="thumb-placeholder-camera5" style="text-align: center; color: #6b7280;">
+                            <div style="font-size: 2rem;">📱</div>
+                            <p style="margin-top: 4px; font-size: 0.875rem;">Phone Camera</p>
+                        </div>
+                    </div>
+                    <div class="camera-info">
+                        <span>Camera #5</span>
+                        <span class="status-indicator status-offline"></span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -415,7 +432,8 @@
                         const placeholder = document.getElementById(`thumb-placeholder-${roomId}`);
                         
                         if (thumbImg) {
-                            thumbImg.src = data.frame_b64;
+                            // Use thumbnail image data if available, otherwise use main frame
+                            thumbImg.src = data.frame_b64_thumbnail || data.frame_b64;
                             thumbImg.style.display = 'block';
                             placeholder.style.display = 'none';
                         }
@@ -423,8 +441,12 @@
                         // Update main feed if current camera
                         if (roomId === currentCamera) {
                             const mainFeed = document.getElementById('main-feed');
-                            mainFeed.src = data.frame_b64;
+                            // Use high-quality image data if available, otherwise use standard frame
+                            mainFeed.src = data.frame_b64_hq || data.frame_b64;
                             mainFeed.style.display = 'block';
+                            // Apply high-quality image rendering for large displays
+                            mainFeed.style.imageRendering = 'high-quality';
+                            mainFeed.style.imageRendering = '-webkit-optimize-contrast';
                             document.getElementById('feed-placeholder').style.display = 'none';
                         }
                     }

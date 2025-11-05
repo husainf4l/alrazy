@@ -14,31 +14,43 @@ from typing import Dict, List, Optional
 class CameraConfig:
     """Camera configuration class"""
     
-    # Camera RTSP URLs from notes.md
+    # Camera RTSP URLs from provided configuration
     CAMERAS = {
         'room1': {
-            'name': 'Room1',
+            'name': 'Main Entrance',
             'main_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/101',
-            'sub_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/102',
-            'location': 'room1'
+            'sub_stream': None,
+            'location': 'Main Entrance',
+            'description': 'Main entrance camera'
         },
         'room2': {
-            'name': 'Room2',
+            'name': 'Back Door',
             'main_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/201',
-            'sub_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/202',
-            'location': 'room2'
+            'sub_stream': None,
+            'location': 'Back Exit',
+            'description': 'Back exit camera'
         },
         'room3': {
-            'name': 'Room3',
+            'name': 'Floor Monitor',
             'main_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/301',
-            'sub_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/302',
-            'location': 'room3'
+            'sub_stream': None,
+            'location': 'Main Floor',
+            'description': 'Main floor monitoring camera'
         },
         'room4': {
-            'name': 'Room4',
-            'main_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/401',
-            'sub_stream': 'rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/402',
-            'location': 'room4'
+            'name': 'Reserved',
+            'main_stream': None,
+            'sub_stream': None,
+            'location': 'Reserved',
+            'description': 'Reserved for future use'
+        },
+        'camera5': {
+            'name': 'Phone Camera',
+            'main_stream': 'rtmp://0.0.0.0:1935/live/camera5',  # RTMP stream from phone
+            'sub_stream': None,  # Phone doesn't have sub-stream
+            'location': 'phone',
+            'type': 'mobile',
+            'description': 'iPhone/iPad streaming via Larix Broadcaster'
         }
     }
     
@@ -107,18 +119,28 @@ class Camera:
     def connect(self) -> bool:
         """Connect to camera stream"""
         try:
-            self.cap = cv2.VideoCapture(self.stream_url)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for real-time
+            self.cap = cv2.VideoCapture(self.stream_url, cv2.CAP_FFMPEG)
             
-            # Test connection
-            ret, frame = self.cap.read()
-            if ret:
-                self.is_connected = True
-                print(f"✅ {self.name} connected successfully")
-                return True
-            else:
-                print(f"❌ {self.name} failed to connect")
-                return False
+            # Configure RTSP stream properties
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for real-time
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # Disable autofocus
+            
+            # Set connection timeout and retry
+            max_retries = 5
+            for attempt in range(max_retries):
+                ret, frame = self.cap.read()
+                if ret:
+                    self.is_connected = True
+                    print(f"✅ {self.name} connected successfully (attempt {attempt + 1})")
+                    return True
+                else:
+                    if attempt < max_retries - 1:
+                        print(f"⏳ {self.name} connection attempt {attempt + 1} failed, retrying...")
+                        time.sleep(0.5)
+            
+            print(f"❌ {self.name} failed to connect after {max_retries} attempts")
+            self.cap.release()
+            return False
                 
         except Exception as e:
             print(f"❌ {self.name} connection error: {e}")

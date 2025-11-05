@@ -1,0 +1,33 @@
+# RTMP Receiver Configuration
+# Source this file before running the receiver, or set these as environment variables
+
+# Your backend IP address
+export BACKEND_IP="192.168.1.137"
+
+# RTMP Server Configuration
+export RTMP_URL="rtmp://0.0.0.0:1935/live/camera5"
+export RTMP_PORT="1935"
+
+# Camera Configuration
+export CAMERA_ID="camera5"
+export ROOM_ID="room_safe"
+
+# Backend Configuration
+export BACKEND_URL="http://localhost:8000"
+
+# FFmpeg Options (for advanced users)
+# Frame rate: 15 (low bandwidth), 25 (recommended), 30 (high bandwidth)
+export FFMPEG_FPS="15"
+
+# JPEG Quality: 1-31 (lower = better quality, 2 = high, 5 = medium, 10 = low)
+export FFMPEG_QUALITY="2"
+
+# Bitrate for encoder (optional)
+export FFMPEG_BITRATE="3000k"
+
+# Logging
+export LOG_LEVEL="INFO"  # DEBUG, INFO, WARNING, ERROR
+export LOG_FILE="rtmp_receiver.log"
+
+# Optional: Slack/Webhook notifications
+# export ERROR_WEBHOOK="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
