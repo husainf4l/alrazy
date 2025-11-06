@@ -1,0 +1,152 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import threading
+import time
+
+from routes.dashboard import router as pages_router
+from routes.cameras import router as cameras_router
+from routes.detections import router as detections_router
+from routes.visualization import router as visualization_router
+from routes import visualization
+from database import engine, Base, SessionLocal
+from services.people_detection import PeopleDetector, RTSPPeopleCounter
+from models.camera import Camera, DetectionCount
+
+# Global detection service instances
+people_detector = None
+people_counter = None
+
+
+def start_detection_service():
+    """Initialize and start people detection service"""
+    global people_detector, people_counter
+    
+    print("🚀 Initializing people detection service...")
+    
+    # Initialize detector with YOLO11m + ByteTrack + DeepSORT
+    people_detector = PeopleDetector(
+        model_size="yolo11m.pt", 
+        conf_threshold=0.5,
+        bytetrack_threshold=0.6  # Threshold for ByteTrack confidence
+    )
+    
+    # Initialize counter with 30 FPS processing (ByteTrack requirement)
+    people_counter = RTSPPeopleCounter(people_detector, process_fps=30)
+    
+    # Load cameras from database and start detection
+    db = SessionLocal()
+    cameras_list = db.query(Camera).all()
+    db.close()
+    
+    print(f"📹 Starting detection on {len(cameras_list)} cameras...")
+    for camera in cameras_list:
+        people_counter.start_stream(camera.id, camera.rtsp_main)
+        time.sleep(1)  # Stagger stream starts
+    
+    print("✅ People detection service running")
+
+
+def save_detection_counts():
+    """Background task to save detection counts to database every 5 minutes"""
+    global people_counter
+    
+    while True:
+        time.sleep(300)  # 5 minutes
+        
+        if people_counter is None:
+            continue
+        
+        try:
+            stats = people_counter.get_stats()
+            db = SessionLocal()
+            
+            for stat in stats:
+                detection = DetectionCount(
+                    camera_id=stat['camera_id'],
+                    people_count=stat['current_count'],
+                    average_count=stat['average_count']
+                )
+                db.add(detection)
+            
+            db.commit()
+            db.close()
+            print(f"💾 Saved detection counts for {len(stats)} cameras")
+        except Exception as e:
+            print(f"❌ Error saving detection counts: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events"""
+    # Startup
+    Base.metadata.create_all(bind=engine)
+    
+    # Start detection service in background thread
+    detection_thread = threading.Thread(target=start_detection_service, daemon=True)
+    detection_thread.start()
+    
+    # Wait a bit for detection service to initialize
+    time.sleep(2)
+    
+    # Inject detection service into visualization router
+    visualization.set_detection_service(people_detector, people_counter)
+    
+    # Start periodic saving thread
+    save_thread = threading.Thread(target=save_detection_counts, daemon=True)
+    save_thread.start()
+    
+    yield
+    
+    # Shutdown
+    if people_counter:
+        db = SessionLocal()
+        cameras_list = db.query(Camera).all()
+        db.close()
+        
+        for camera in cameras_list:
+            people_counter.stop_stream(camera.id)
+
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="Brinks V2 - Security Camera System with AI Detection",
+    description="Modern security camera management and monitoring system with WebRTC and YOLO11m people detection",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(pages_router)
+app.include_router(cameras_router)
+app.include_router(detections_router)
+app.include_router(visualization_router)
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Brinks V2 Security Camera System with YOLO11m AI Detection",
+        "version": "2.0.0",
+        "status": "online",
+        "detection_service": "active" if people_counter else "initializing"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "Brinks V2",
+        "detection_active": people_counter is not None
+    }

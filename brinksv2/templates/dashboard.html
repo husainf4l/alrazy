@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Brinks V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation Bar -->
+    <nav class="bg-gray-800 text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-8">
+                    <a href="/" class="text-2xl font-bold hover:text-gray-300 transition">
+                        Brinks V2
+                    </a>
+                    <div class="hidden md:flex space-x-6">
+                        <a href="/dashboard" class="bg-gray-700 text-white px-3 py-2 rounded-md">
+                            Dashboard
+                        </a>
+                        <a href="/cameras-page" class="hover:text-gray-300 transition px-3 py-2 rounded-md hover:bg-gray-700">
+                            Cameras
+                        </a>
+                        <a href="/docs" target="_blank" class="hover:text-gray-300 transition px-3 py-2 rounded-md hover:bg-gray-700">
+                            API Docs
+                        </a>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-sm text-gray-300">Live</span>
+                    </div>
+                    <span class="text-sm text-gray-400" id="currentTime"></span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mx-auto p-6">
+        <!-- Header Stats -->
+        <div class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Security Dashboard</h1>
+            <p class="text-gray-600">Real-time camera monitoring system</p>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Total Cameras</p>
+                        <p class="text-3xl font-bold text-gray-800" id="totalCameras">-</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Active</p>
+                        <p class="text-3xl font-bold text-gray-800" id="activeCameras">-</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Total People</p>
+                        <p class="text-3xl font-bold text-gray-800" id="totalPeople">-</p>
+                    </div>
+                    <div class="bg-orange-100 p-3 rounded-full">
+                        <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Stream Quality</p>
+                        <p class="text-2xl font-bold text-gray-800">Main HD</p>
+                    </div>
+                    <div class="bg-yellow-100 p-3 rounded-full">
+                        <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">AI Detection</p>
+                        <p class="text-2xl font-bold text-green-600" id="detectionStatus">Active</p>
+                    </div>
+                    <div class="bg-purple-100 p-3 rounded-full">
+                        <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center space-x-4">
+                    <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200 flex items-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span>Refresh Streams</span>
+                    </button>
+                    <div class="flex items-center space-x-2 bg-green-50 border border-green-200 px-4 py-2 rounded-lg">
+                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-green-700">High Quality • Auto-Adaptive</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-600 mr-2">Grid Layout:</span>
+                    <button id="gridView2x2" class="px-3 py-2 border-2 border-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
+                        <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm8-8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
+                        </svg>
+                    </button>
+                    <button id="gridView1x4" class="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Grid -->
+        <div id="cameraGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Cameras will be loaded here -->
+            <div class="col-span-full flex items-center justify-center p-12">
+                <div class="text-center">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p class="text-gray-500">Loading cameras...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Ensure proper aspect ratio for camera videos */
+        .camera-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            background: #1f2937;
+            overflow: hidden;
+        }
+        
+        .camera-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Smooth grid transitions */
+        #cameraGrid {
+            transition: all 0.3s ease;
+        }
+
+        /* Grid layout variants */
+        .grid-2x2 {
+            grid-template-columns: repeat(1, 1fr);
+        }
+        
+        @media (min-width: 1024px) {
+            .grid-2x2 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .grid-1x4 {
+            grid-template-columns: repeat(1, 1fr);
+        }
+
+        .grid-4x1 {
+            grid-template-columns: repeat(1, 1fr);
+        }
+
+        @media (min-width: 768px) {
+            .grid-4x1 {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        /* Loading animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8001';
+        const WEBRTC_URL = 'http://127.0.0.1:8083';
+        let cameras = [];
+        let peerConnections = {};
+
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Load cameras from database
+        async function loadCameras() {
+            try {
+                const response = await fetch(`${API_URL}/cameras/`);
+                cameras = await response.json();
+                
+                document.getElementById('totalCameras').textContent = cameras.length;
+                document.getElementById('activeCameras').textContent = cameras.length;
+                
+                renderCameras();
+            } catch (error) {
+                console.error('Error loading cameras:', error);
+                document.getElementById('cameraGrid').innerHTML = `
+                    <div class="col-span-full text-center p-12">
+                        <p class="text-red-500">Error loading cameras. Please check the connection.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Start WebRTC stream for a camera
+        async function startWebRTCStream(cameraId, streamId, videoElement) {
+            try {
+                const stream = new MediaStream();
+                const pc = new RTCPeerConnection({
+                    iceServers: [{
+                        urls: 'stun:stun.l.google.com:19302'
+                    }]
+                });
+
+                pc.ontrack = (event) => {
+                    console.log(`Received track for camera ${cameraId}`);
+                    stream.addTrack(event.track);
+                    videoElement.srcObject = stream;
+                    videoElement.play();
+                    
+                    // Update status indicator
+                    updateConnectionStatus(cameraId, 'connected');
+                };
+
+                pc.oniceconnectionstatechange = () => {
+                    console.log(`ICE Connection State for camera ${cameraId}: ${pc.iceConnectionState}`);
+                    
+                    // Update status based on connection state
+                    switch(pc.iceConnectionState) {
+                        case 'connected':
+                        case 'completed':
+                            updateConnectionStatus(cameraId, 'connected');
+                            break;
+                        case 'disconnected':
+                            updateConnectionStatus(cameraId, 'disconnected');
+                            break;
+                        case 'failed':
+                            updateConnectionStatus(cameraId, 'failed');
+                            break;
+                        case 'checking':
+                        case 'new':
+                            updateConnectionStatus(cameraId, 'connecting');
+                            break;
+                    }
+                };
+
+                // Get codec info first
+                const codecResponse = await fetch(`${WEBRTC_URL}/stream/codec/${streamId}`);
+                if (!codecResponse.ok) {
+                    throw new Error(`Failed to get codec info: ${codecResponse.status}`);
+                }
+                
+                const codecs = await codecResponse.json();
+                console.log(`Codecs for ${streamId}:`, codecs);
+                
+                // Add transceivers based on codec info
+                codecs.forEach(codec => {
+                    pc.addTransceiver(codec.Type, {
+                        direction: 'sendrecv'
+                    });
+                });
+
+                // Create offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Send offer to WebRTC server
+                const response = await fetch(`${WEBRTC_URL}/stream/receiver/${streamId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    },
+                    body: new URLSearchParams({
+                        suuid: streamId,
+                        data: btoa(pc.localDescription.sdp)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`WebRTC server responded with ${response.status}`);
+                }
+
+                const answerSdp = await response.text();
+                const answer = {
+                    type: 'answer',
+                    sdp: atob(answerSdp)
+                };
+                
+                await pc.setRemoteDescription(answer);
+                console.log(`WebRTC connection established for camera ${cameraId}`);
+
+                peerConnections[cameraId] = pc;
+
+            } catch (error) {
+                console.error(`Error starting WebRTC for camera ${cameraId}:`, error);
+                videoElement.parentElement.innerHTML = `
+                    <div class="flex items-center justify-center h-full bg-gray-800">
+                        <div class="text-center text-white">
+                            <svg class="w-12 h-12 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p class="text-sm">Stream unavailable</p>
+                            <p class="text-xs mt-1">${error.message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Render cameras
+        function renderCameras() {
+            const grid = document.getElementById('cameraGrid');
+            
+            // Close existing peer connections
+            Object.values(peerConnections).forEach(pc => pc.close());
+            peerConnections = {};
+            
+            if (cameras.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center p-12">
+                        <p class="text-gray-500">No cameras found. <a href="/cameras-page" class="text-blue-600 hover:underline">Add cameras</a> to get started.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = cameras.map((camera, index) => {
+                const streamId = `camera${index + 1}`;
+                return `
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow duration-300">
+                        <!-- Video Container with proper aspect ratio -->
+                        <div class="camera-container">
+                            <!-- Live Video with Tracking Visualization -->
+                            <img id="video-${camera.id}" 
+                                   class="camera-video" 
+                                   src="${API_URL}/visualization/camera/${camera.id}/stream?fps=15"
+                                   alt="${camera.name}">
+                            </img>
+                            
+                            <!-- Status Overlay -->
+                            <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="bg-red-600 px-3 py-1.5 rounded-full flex items-center space-x-1.5 shadow-lg">
+                                            <div class="h-2 w-2 bg-white rounded-full animate-pulse"></div>
+                                            <span class="text-white text-xs font-semibold tracking-wide">LIVE</span>
+                                        </div>
+                                        <div class="bg-black/50 backdrop-blur-sm px-2 py-1 rounded text-xs text-white font-mono">
+                                            ${streamId}
+                                        </div>
+                                    </div>
+                                    <button onclick="toggleFullscreen(${camera.id})" 
+                                            class="bg-black/50 backdrop-blur-sm hover:bg-black/70 p-2 rounded-lg transition-colors">
+                                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Loading Overlay -->
+                            <div id="loading-${camera.id}" class="absolute inset-0 flex items-center justify-center bg-gray-900/90 backdrop-blur-sm">
+                                <div class="text-center text-white">
+                                    <div class="relative">
+                                        <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500/30 border-t-blue-500 mx-auto mb-3"></div>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm font-medium">Connecting to camera...</p>
+                                    <p class="text-xs text-gray-400 mt-1">Establishing WebRTC connection</p>
+                                </div>
+                            </div>
+
+                            <!-- Connection Status Indicator -->
+                            <div id="status-${camera.id}" class="absolute bottom-4 right-4 hidden">
+                                <div class="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center space-x-2 shadow-lg">
+                                    <div id="status-indicator-${camera.id}" class="h-2 w-2 rounded-full bg-yellow-500"></div>
+                                    <span id="status-text-${camera.id}" class="text-white text-xs font-medium">Connecting</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Camera Info Panel -->
+                        <div class="p-4 bg-gradient-to-br from-gray-50 to-gray-100">
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-900 mb-1">${camera.name}</h3>
+                                    <p class="text-sm text-gray-600 flex items-center">
+                                        <svg class="w-4 h-4 mr-1.5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        ${camera.location}
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <!-- Camera Metadata -->
+                            <div class="grid grid-cols-3 gap-2 text-xs">
+                                <div class="bg-white rounded-lg p-2 border border-gray-200">
+                                    <p class="text-gray-500 mb-0.5">Protocol</p>
+                                    <p class="font-semibold text-green-600 flex items-center">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
+                                        </svg>
+                                        WebRTC
+                                    </p>
+                                </div>
+                                <div class="bg-white rounded-lg p-2 border border-gray-200">
+                                    <p class="text-gray-500 mb-0.5">Stream ID</p>
+                                    <p class="font-semibold text-blue-600 font-mono text-xs">${streamId}</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-2 border border-orange-200">
+                                    <p class="text-gray-500 mb-0.5">People</p>
+                                    <p id="people-count-${camera.id}" class="font-bold text-orange-600 text-lg">
+                                        <span class="animate-pulse">...</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Initialize WebRTC streams after rendering
+            // Initialize camera streams with tracking visualization
+            setTimeout(() => {
+                cameras.forEach((camera, index) => {
+                    const streamId = `camera${index + 1}`;
+                    const imgElement = document.getElementById(`video-${camera.id}`);
+                    const loadingElement = document.getElementById(`loading-${camera.id}`);
+                    
+                    if (imgElement && loadingElement) {
+                        // Hide loading after a short delay (MJPEG streams start immediately)
+                        setTimeout(() => {
+                            loadingElement.style.display = 'none';
+                            updateConnectionStatus(camera.id, 'connected');
+                        }, 2000);
+                        
+                        // Handle errors
+                        imgElement.onerror = () => {
+                            loadingElement.innerHTML = `
+                                <div class="text-center text-white">
+                                    <svg class="w-12 h-12 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <p class="text-sm">Stream unavailable</p>
+                                    <button onclick="location.reload()" class="mt-2 px-3 py-1 bg-blue-600 rounded text-sm">Retry</button>
+                                </div>
+                            `;
+                            updateConnectionStatus(camera.id, 'failed');
+                        };
+                    }
+                });
+            }, 500);
+        }
+
+        // Toggle fullscreen
+        function toggleFullscreen(cameraId) {
+            const imgElement = document.getElementById(`video-${cameraId}`);
+            if (!imgElement) return;
+            
+            const container = imgElement.parentElement;
+            if (!document.fullscreenElement) {
+                container.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Update connection status indicator
+        function updateConnectionStatus(cameraId, status) {
+            const statusElement = document.getElementById(`status-${cameraId}`);
+            const indicatorElement = document.getElementById(`status-indicator-${cameraId}`);
+            const textElement = document.getElementById(`status-text-${cameraId}`);
+            
+            if (!statusElement || !indicatorElement || !textElement) return;
+            
+            statusElement.classList.remove('hidden');
+            
+            switch(status) {
+                case 'connected':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-green-500 animate-pulse';
+                    textElement.textContent = 'Connected';
+                    setTimeout(() => statusElement.classList.add('hidden'), 3000);
+                    break;
+                case 'connecting':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-yellow-500 animate-pulse';
+                    textElement.textContent = 'Connecting';
+                    break;
+                case 'disconnected':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-orange-500';
+                    textElement.textContent = 'Disconnected';
+                    break;
+                case 'failed':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-red-500';
+                    textElement.textContent = 'Failed';
+                    break;
+            }
+        }
+
+        // Fetch and update people detection counts
+        async function updatePeopleCounts() {
+            try {
+                const response = await fetch(`${API_URL}/detections/live`);
+                if (!response.ok) return;
+                
+                const stats = await response.json();
+                
+                // Update total people count
+                const totalPeople = stats.reduce((sum, stat) => sum + stat.current_count, 0);
+                document.getElementById('totalPeople').textContent = totalPeople;
+                
+                // Update detection status
+                document.getElementById('detectionStatus').textContent = 'Active';
+                document.getElementById('detectionStatus').className = 'text-2xl font-bold text-green-600';
+                
+                // Update individual camera counts
+                stats.forEach(stat => {
+                    const countElement = document.getElementById(`people-count-${stat.camera_id}`);
+                    if (countElement) {
+                        countElement.innerHTML = `
+                            <span class="text-lg">${stat.current_count}</span>
+                            <span class="text-xs text-gray-500 ml-1">(avg: ${stat.average_count})</span>
+                        `;
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching people counts:', error);
+                document.getElementById('detectionStatus').textContent = 'Offline';
+                document.getElementById('detectionStatus').className = 'text-2xl font-bold text-gray-400';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('refreshBtn').addEventListener('click', loadCameras);
+
+        document.getElementById('gridView2x2').addEventListener('click', () => {
+            document.getElementById('cameraGrid').className = 'grid grid-cols-1 lg:grid-cols-2 gap-4 grid-2x2';
+        });
+
+        document.getElementById('gridView1x4').addEventListener('click', () => {
+            document.getElementById('cameraGrid').className = 'grid gap-4 grid-1x4';
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            Object.values(peerConnections).forEach(pc => pc.close());
+        });
+
+        // Load cameras on page load
+        loadCameras();
+        
+        // Update people counts every 2 seconds
+        updatePeopleCounts();
+        setInterval(updatePeopleCounts, 2000);
+    </script>
+</body>
+</html>
