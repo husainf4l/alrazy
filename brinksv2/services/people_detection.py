@@ -286,7 +286,7 @@ class PeopleDetector:
     
     def draw_tracks(self, frame: np.ndarray, camera_id: int) -> np.ndarray:
         """
-        Draw bounding boxes and track IDs on frame with ByteTrack/DeepSORT indicators
+        Draw bounding boxes and track IDs on frame - minimal clean overlay
         
         Args:
             frame: Input frame
@@ -301,7 +301,7 @@ class PeopleDetector:
         tracks = self.camera_tracks[camera_id].get('tracks', {})
         people_count = self.camera_tracks[camera_id].get('count', 0)
         
-        # Draw each track
+        # Draw each track with minimal design
         for track_id, track_data in tracks.items():
             bbox = track_data['bbox']
             confidence = track_data.get('confidence', 0.0)
@@ -310,87 +310,48 @@ class PeopleDetector:
             # Color coding: Green for ByteTrack, Blue for DeepSORT
             if source == 'bytetrack':
                 color = (0, 255, 0)  # Green for ByteTrack
-                label_bg = (0, 180, 0)
             elif source == 'deepsort':
-                color = (255, 100, 0)  # Orange/Blue for DeepSORT
-                label_bg = (200, 80, 0)
+                color = (255, 165, 0)  # Orange for DeepSORT
             else:
                 color = (255, 255, 255)  # White for unknown
-                label_bg = (180, 180, 180)
             
-            # Draw bounding box with thicker line
-            cv2.rectangle(annotated, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 3)
+            # Draw bounding box with clean line
+            cv2.rectangle(annotated, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
             
-            # Prepare label text with track ID
+            # Prepare minimal label - just the ID number
             try:
                 if isinstance(track_id, str):
-                    # String track ID (e.g., "ds_123")
                     if track_id.startswith("ds_"):
-                        abs_track_id = track_id[3:]  # Remove "ds_" prefix
+                        abs_track_id = track_id[3:]
                     else:
                         abs_track_id = track_id
                 else:
-                    # Numeric track ID
                     abs_track_id = abs(int(track_id))
             except (ValueError, TypeError):
                 abs_track_id = "?"
             
-            tracker_label = "BT" if source == 'bytetrack' else "DS"
-            label = f"ID:{abs_track_id} [{tracker_label}]"
+            label = f"#{abs_track_id}"
             
-            # Calculate label size for background
+            # Draw small label above bounding box
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.6
-            thickness = 2
+            font_scale = 0.5
+            thickness = 1
             (label_width, label_height), baseline = cv2.getTextSize(label, font, font_scale, thickness)
             
-            # Draw label background
-            label_y = bbox[1] - 10
-            if label_y < label_height + 10:
-                label_y = bbox[1] + label_height + 10
+            # Position label above box
+            label_y = bbox[1] - 8
+            if label_y < label_height + 5:
+                label_y = bbox[1] + label_height + 8
             
+            # Draw label background (small, rounded)
             cv2.rectangle(annotated, 
-                         (bbox[0], label_y - label_height - 5),
-                         (bbox[0] + label_width + 10, label_y + 5),
-                         label_bg, -1)
+                         (bbox[0], label_y - label_height - 3),
+                         (bbox[0] + label_width + 6, label_y + 2),
+                         color, -1)
             
-            # Draw label text
-            cv2.putText(annotated, label, (bbox[0] + 5, label_y),
-                       font, font_scale, (255, 255, 255), thickness)
-            
-            # Draw confidence below the box
-            conf_text = f"{confidence:.2%}"
-            cv2.putText(annotated, conf_text, (bbox[0], bbox[3] + 20),
-                       font, 0.5, color, 1)
-        
-        # Draw header with statistics
-        header_height = 80
-        cv2.rectangle(annotated, (0, 0), (annotated.shape[1], header_height), (0, 0, 0), -1)
-        cv2.rectangle(annotated, (0, 0), (annotated.shape[1], header_height), (255, 255, 255), 2)
-        
-        # Draw people count
-        count_text = f"People: {people_count}"
-        cv2.putText(annotated, count_text, (15, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
-        
-        # Draw tracker stats
-        bytetrack_count = sum(1 for t in tracks.values() if t.get('source') == 'bytetrack')
-        deepsort_count = sum(1 for t in tracks.values() if t.get('source') == 'deepsort')
-        
-        stats_text = f"ByteTrack: {bytetrack_count} | DeepSORT: {deepsort_count}"
-        cv2.putText(annotated, stats_text, (15, 65),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
-        
-        # Draw legend
-        legend_x = annotated.shape[1] - 250
-        cv2.putText(annotated, "Legend:", (legend_x, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        cv2.rectangle(annotated, (legend_x, 40), (legend_x + 20, 55), (0, 255, 0), -1)
-        cv2.putText(annotated, "ByteTrack", (legend_x + 25, 52),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.rectangle(annotated, (legend_x + 120, 40), (legend_x + 140, 55), (255, 100, 0), -1)
-        cv2.putText(annotated, "DeepSORT", (legend_x + 145, 52),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            # Draw label text in black for contrast
+            cv2.putText(annotated, label, (bbox[0] + 3, label_y - 1),
+                       font, font_scale, (0, 0, 0), thickness)
         
         return annotated
     

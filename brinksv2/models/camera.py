@@ -16,8 +16,8 @@ class Camera(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationship to detection counts
-    detection_counts = relationship("DetectionCount", back_populates="camera")
+    # Relationship to detection counts with cascade delete
+    detection_counts = relationship("DetectionCount", back_populates="camera", cascade="all, delete-orphan")
 
 
 class DetectionCount(Base):

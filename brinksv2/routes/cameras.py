@@ -60,13 +60,18 @@ async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session
     return camera
 
 
-@router.delete("/{camera_id}", status_code=204)
+@router.delete("/{camera_id}")
 async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
-    """Delete a camera"""
+    """Delete a camera and all its related detection records"""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
     
-    db.delete(camera)
-    db.commit()
-    return None
+    # Delete the camera (cascade will handle detection_counts)
+    try:
+        db.delete(camera)
+        db.commit()
+        return {"success": True, "message": f"Camera {camera_id} deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete camera: {str(e)}")

@@ -5,146 +5,116 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Brinks V2</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+    </style>
 </head>
-<body class="bg-gray-50">
-    <!-- Navigation Bar -->
-    <nav class="bg-gray-800 text-white shadow-lg">
-        <div class="container mx-auto px-6 py-4">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-8">
-                    <a href="/" class="text-2xl font-bold hover:text-gray-300 transition">
+<body class="bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 antialiased">
+    <!-- Navigation Bar - Apple Style -->
+    <nav class="bg-white/80 backdrop-blur-2xl border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-6 sm:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-10">
+                    <a href="/" class="text-xl font-semibold text-gray-900 hover:text-gray-600 transition-colors tracking-tight">
                         Brinks V2
                     </a>
-                    <div class="hidden md:flex space-x-6">
-                        <a href="/dashboard" class="bg-gray-700 text-white px-3 py-2 rounded-md">
+                    <div class="hidden md:flex space-x-1">
+                        <a href="/dashboard" class="bg-gray-100 text-gray-900 px-4 py-2 rounded-full text-sm font-medium transition-all hover:bg-gray-200">
                             Dashboard
                         </a>
-                        <a href="/cameras-page" class="hover:text-gray-300 transition px-3 py-2 rounded-md hover:bg-gray-700">
+                        <a href="/cameras-page" class="text-gray-600 px-4 py-2 rounded-full text-sm font-medium hover:text-gray-900 hover:bg-gray-100 transition-all">
                             Cameras
                         </a>
-                        <a href="/docs" target="_blank" class="hover:text-gray-300 transition px-3 py-2 rounded-md hover:bg-gray-700">
+                        <a href="/docs" target="_blank" class="text-gray-600 px-4 py-2 rounded-full text-sm font-medium hover:text-gray-900 hover:bg-gray-100 transition-all">
                             API Docs
                         </a>
                     </div>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <div class="flex items-center space-x-2">
-                        <div class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span class="text-sm text-gray-300">Live</span>
+                    <div class="flex items-center space-x-2 bg-green-50 px-3 py-1.5 rounded-full">
+                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-xs font-medium text-green-700">Live</span>
                     </div>
-                    <span class="text-sm text-gray-400" id="currentTime"></span>
+                    <span class="text-sm text-gray-500 font-medium" id="currentTime"></span>
                 </div>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <div class="container mx-auto p-6">
-        <!-- Header Stats -->
-        <div class="mb-8">
-            <h1 class="text-4xl font-bold text-gray-800 mb-2">Security Dashboard</h1>
-            <p class="text-gray-600">Real-time camera monitoring system</p>
-        </div>
-
-        <!-- Stats Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm font-medium">Total Cameras</p>
-                        <p class="text-3xl font-bold text-gray-800" id="totalCameras">-</p>
-                    </div>
-                    <div class="bg-blue-100 p-3 rounded-full">
-                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                        </svg>
-                    </div>
+    <div class="w-full px-3 py-3">
+        <!-- Header - Compact -->
+        <div class="mb-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Security Dashboard</h1>
+                    <p class="text-sm text-gray-500">Real-time monitoring across 4 rooms</p>
                 </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm font-medium">Active</p>
-                        <p class="text-3xl font-bold text-gray-800" id="activeCameras">-</p>
-                    </div>
-                    <div class="bg-green-100 p-3 rounded-full">
-                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm font-medium">Total People</p>
-                        <p class="text-3xl font-bold text-gray-800" id="totalPeople">-</p>
-                    </div>
-                    <div class="bg-orange-100 p-3 rounded-full">
-                        <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm font-medium">Stream Quality</p>
-                        <p class="text-2xl font-bold text-gray-800">Main HD</p>
-                    </div>
-                    <div class="bg-yellow-100 p-3 rounded-full">
-                        <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm font-medium">AI Detection</p>
-                        <p class="text-2xl font-bold text-green-600" id="detectionStatus">Active</p>
-                    </div>
-                    <div class="bg-purple-100 p-3 rounded-full">
-                        <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Controls -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-            <div class="flex items-center justify-between flex-wrap gap-4">
-                <div class="flex items-center space-x-4">
-                    <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200 flex items-center space-x-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="flex items-center space-x-2">
+                    <button id="refreshBtn" class="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-all">
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                         </svg>
-                        <span>Refresh Streams</span>
+                        Refresh
                     </button>
-                    <div class="flex items-center space-x-2 bg-green-50 border border-green-200 px-4 py-2 rounded-lg">
-                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    <div class="flex items-center space-x-2 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Live</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid - Corporate Style -->
+                <!-- Stats Grid - Single Row Compact -->
+        <div class="grid grid-cols-4 gap-3 mb-4">
+            <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Rooms</p>
+                <p class="text-xl font-semibold text-gray-900" id="totalCameras">4</p>
+            </div>
+            <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Active</p>
+                <p class="text-xl font-semibold text-gray-900" id="activeCameras">-</p>
+            </div>
+            <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">People</p>
+                <p class="text-xl font-semibold text-gray-900" id="totalPeople">-</p>
+            </div>
+            <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">AI Status</p>
+                <p class="text-base font-semibold text-green-600" id="detectionStatus">Active</p>
+            </div>
+        </div>
+
+        <!-- Controls - Corporate Style -->
+        <div class="bg-white/70 backdrop-blur-xl rounded-xl p-3 mb-4 shadow-sm border border-gray-200/60">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center space-x-2">
+                    <button id="refreshBtn" class="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg transition-all duration-200 flex items-center space-x-2 font-medium shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                         </svg>
-                        <span class="text-sm font-medium text-green-700">High Quality • Auto-Adaptive</span>
+                        <span class="text-sm">Refresh</span>
+                    </button>
+                    <div class="flex items-center space-x-2 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full"></div>
+                        <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Live HD</span>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <span class="text-sm text-gray-600 mr-2">Grid Layout:</span>
-                    <button id="gridView2x2" class="px-3 py-2 border-2 border-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
-                        <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <span class="text-xs text-gray-500 font-semibold mr-1 uppercase tracking-wide">View</span>
+                    <button id="gridView2x2" class="p-2 bg-gray-900 border-2 border-gray-900 rounded-lg hover:bg-gray-800 transition-all">
+                        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm8-8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
                         </svg>
                     </button>
-                    <button id="gridView1x4" class="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <button id="gridView1x4" class="p-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-all">
+                        <svg class="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"></path>
                         </svg>
                     </button>
@@ -152,26 +122,42 @@
             </div>
         </div>
 
-        <!-- Camera Grid -->
+        <!-- Room Grid - 2x2 Same Size -->
         <div id="cameraGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <!-- Cameras will be loaded here -->
-            <div class="col-span-full flex items-center justify-center p-12">
+            <!-- Rooms will be loaded here -->
+            <div class="col-span-full flex items-center justify-center p-16">
                 <div class="text-center">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p class="text-gray-500">Loading cameras...</p>
+                    <div class="relative mx-auto mb-4" style="width: 48px; height: 48px;">
+                        <div class="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+                        <div class="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+                    </div>
+                    <p class="text-gray-500 font-medium">Loading rooms...</p>
                 </div>
             </div>
         </div>
     </div>
 
     <style>
-        /* Ensure proper aspect ratio for camera videos */
+        /* Apple-style smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Enable scrolling */
+        html, body {
+            height: 100%;
+            overflow: auto;
+        }
+
+        /* Room container with fixed aspect ratio - same size for all */
         .camera-container {
             position: relative;
             width: 100%;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
-            background: #1f2937;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio - standard for all cameras */
+            background: linear-gradient(145deg, #0f0f0f 0%, #1a1a1a 50%, #0f0f0f 100%);
             overflow: hidden;
+            border-radius: 12px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
         }
         
         .camera-video {
@@ -180,12 +166,30 @@
             left: 0;
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
+            border-radius: 12px;
         }
 
-        /* Smooth grid transitions */
+        /* Enhanced badge animations */
+        @keyframes pulse-glow {
+            0%, 100% {
+                opacity: 1;
+                box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+            }
+            50% {
+                opacity: 0.8;
+                box-shadow: 0 0 16px rgba(255, 255, 255, 0.5);
+            }
+        }
+
+        .room-card:hover .camera-container {
+            transform: scale(1.01);
+            transition: transform 0.3s ease;
+        }
+
+        /* Smooth transitions */
         #cameraGrid {
-            transition: all 0.3s ease;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         /* Grid layout variants */
@@ -203,24 +207,40 @@
             grid-template-columns: repeat(1, 1fr);
         }
 
-        .grid-4x1 {
-            grid-template-columns: repeat(1, 1fr);
+        /* Glassmorphism effect */
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
         }
 
-        @media (min-width: 768px) {
-            .grid-4x1 {
-                grid-template-columns: repeat(4, 1fr);
-            }
+        /* Hover effects */
+        .room-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* Loading animation */
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .room-card:hover {
+            transform: translateY(-4px);
         }
 
-        .loading-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
         }
     </style>
 
@@ -363,7 +383,7 @@
             }
         }
 
-        // Render cameras
+        // Render cameras with Apple-style modern design
         function renderCameras() {
             const grid = document.getElementById('cameraGrid');
             
@@ -373,106 +393,94 @@
             
             if (cameras.length === 0) {
                 grid.innerHTML = `
-                    <div class="col-span-full text-center p-12">
-                        <p class="text-gray-500">No cameras found. <a href="/cameras-page" class="text-blue-600 hover:underline">Add cameras</a> to get started.</p>
+                    <div class="col-span-full text-center p-16">
+                        <div class="bg-white/60 backdrop-blur-xl rounded-3xl p-12 shadow-sm border border-gray-200/50 inline-block">
+                            <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <p class="text-gray-500 font-medium mb-3">No rooms found</p>
+                            <a href="/cameras-page" class="text-blue-600 hover:text-blue-700 font-medium text-sm">Add rooms to get started →</a>
+                        </div>
                     </div>
                 `;
                 return;
             }
 
+            const roomNames = ['Room 1', 'Room 2', 'Room 3', 'Room 4'];
+
             grid.innerHTML = cameras.map((camera, index) => {
                 const streamId = `camera${index + 1}`;
+                const roomName = roomNames[index] || `Room ${index + 1}`;
+                
                 return `
-                    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-shadow duration-300">
-                        <!-- Video Container with proper aspect ratio -->
+                    <div class="room-card bg-white/70 backdrop-blur-xl rounded-xl shadow-md overflow-hidden border border-gray-300/60 hover:shadow-xl transition-all duration-300">
+                        <!-- Video Container with Minimal Overlay -->
                         <div class="camera-container">
-                            <!-- Live Video with Tracking Visualization -->
+                            <!-- Live Video with AI Tracking -->
                             <img id="video-${camera.id}" 
-                                   class="camera-video" 
-                                   src="${API_URL}/visualization/camera/${camera.id}/stream?fps=15"
-                                   alt="${camera.name}">
+                                 class="camera-video" 
+                                 src="${API_URL}/visualization/camera/${camera.id}/stream?fps=15"
+                                 alt="${roomName}">
                             </img>
                             
-                            <!-- Status Overlay -->
-                            <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent">
+                            <!-- Top Bar - Minimal & Clean -->
+                            <div class="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/60 to-transparent z-10">
                                 <div class="flex items-center justify-between">
+                                    <!-- Left: Room Name & Live -->
                                     <div class="flex items-center space-x-2">
-                                        <div class="bg-red-600 px-3 py-1.5 rounded-full flex items-center space-x-1.5 shadow-lg">
-                                            <div class="h-2 w-2 bg-white rounded-full animate-pulse"></div>
-                                            <span class="text-white text-xs font-semibold tracking-wide">LIVE</span>
-                                        </div>
-                                        <div class="bg-black/50 backdrop-blur-sm px-2 py-1 rounded text-xs text-white font-mono">
-                                            ${streamId}
+                                        <span class="text-white text-sm font-semibold drop-shadow-lg">${roomName}</span>
+                                        <div class="flex items-center space-x-1 bg-red-600/90 px-2 py-0.5 rounded backdrop-blur-sm">
+                                            <div class="h-1.5 w-1.5 bg-white rounded-full animate-pulse"></div>
+                                            <span class="text-white text-xs font-bold tracking-wide">LIVE</span>
                                         </div>
                                     </div>
+                                    
+                                    <!-- Right: Fullscreen -->
                                     <button onclick="toggleFullscreen(${camera.id})" 
-                                            class="bg-black/50 backdrop-blur-sm hover:bg-black/70 p-2 rounded-lg transition-colors">
-                                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            class="bg-black/30 hover:bg-black/50 p-1.5 rounded backdrop-blur-sm transition-all">
+                                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
                                         </svg>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Loading Overlay -->
-                            <div id="loading-${camera.id}" class="absolute inset-0 flex items-center justify-center bg-gray-900/90 backdrop-blur-sm">
+                            <!-- Loading State - Clean -->
+                            <div id="loading-${camera.id}" class="absolute inset-0 flex items-center justify-center bg-gray-900 z-20">
                                 <div class="text-center text-white">
-                                    <div class="relative">
-                                        <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500/30 border-t-blue-500 mx-auto mb-3"></div>
-                                        <div class="absolute inset-0 flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                            </svg>
-                                        </div>
+                                    <div class="relative mx-auto mb-3" style="width: 48px; height: 48px;">
+                                        <div class="absolute inset-0 rounded-full border-3 border-white/20"></div>
+                                        <div class="absolute inset-0 rounded-full border-3 border-white border-t-transparent animate-spin"></div>
                                     </div>
-                                    <p class="text-sm font-medium">Connecting to camera...</p>
-                                    <p class="text-xs text-gray-400 mt-1">Establishing WebRTC connection</p>
+                                    <p class="text-sm font-medium opacity-90">${roomName}</p>
+                                    <p class="text-xs text-gray-400 mt-1">Connecting...</p>
                                 </div>
                             </div>
 
-                            <!-- Connection Status Indicator -->
-                            <div id="status-${camera.id}" class="absolute bottom-4 right-4 hidden">
-                                <div class="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center space-x-2 shadow-lg">
-                                    <div id="status-indicator-${camera.id}" class="h-2 w-2 rounded-full bg-yellow-500"></div>
-                                    <span id="status-text-${camera.id}" class="text-white text-xs font-medium">Connecting</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Camera Info Panel -->
-                        <div class="p-4 bg-gradient-to-br from-gray-50 to-gray-100">
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex-1">
-                                    <h3 class="text-lg font-bold text-gray-900 mb-1">${camera.name}</h3>
-                                    <p class="text-sm text-gray-600 flex items-center">
-                                        <svg class="w-4 h-4 mr-1.5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                            <!-- Bottom Bar - Minimal Info -->
+                            <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent z-10">
+                                <div class="flex items-center justify-between text-white text-xs">
+                                    <!-- Left: Location & Stream ID -->
+                                    <div class="flex items-center space-x-3">
+                                        <div class="flex items-center space-x-1">
+                                            <svg class="w-3 h-3 opacity-80" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <span class="font-medium drop-shadow">${camera.location}</span>
+                                        </div>
+                                        <span class="opacity-60">•</span>
+                                        <span class="font-mono opacity-80 drop-shadow">${streamId}</span>
+                                    </div>
+                                    
+                                    <!-- Right: People Count -->
+                                    <div class="flex items-center space-x-1.5 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"></path>
                                         </svg>
-                                        ${camera.location}
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <!-- Camera Metadata -->
-                            <div class="grid grid-cols-3 gap-2 text-xs">
-                                <div class="bg-white rounded-lg p-2 border border-gray-200">
-                                    <p class="text-gray-500 mb-0.5">Protocol</p>
-                                    <p class="font-semibold text-green-600 flex items-center">
-                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
-                                        </svg>
-                                        WebRTC
-                                    </p>
-                                </div>
-                                <div class="bg-white rounded-lg p-2 border border-gray-200">
-                                    <p class="text-gray-500 mb-0.5">Stream ID</p>
-                                    <p class="font-semibold text-blue-600 font-mono text-xs">${streamId}</p>
-                                </div>
-                                <div class="bg-white rounded-lg p-2 border border-orange-200">
-                                    <p class="text-gray-500 mb-0.5">People</p>
-                                    <p id="people-count-${camera.id}" class="font-bold text-orange-600 text-lg">
-                                        <span class="animate-pulse">...</span>
-                                    </p>
+                                        <span id="people-count-${camera.id}" class="font-bold drop-shadow-lg">
+                                            <span class="animate-pulse">...</span>
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -480,7 +488,6 @@
                 `;
             }).join('');
             
-            // Initialize WebRTC streams after rendering
             // Initialize camera streams with tracking visualization
             setTimeout(() => {
                 cameras.forEach((camera, index) => {
@@ -499,11 +506,13 @@
                         imgElement.onerror = () => {
                             loadingElement.innerHTML = `
                                 <div class="text-center text-white">
-                                    <svg class="w-12 h-12 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-16 h-16 mx-auto mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                     </svg>
-                                    <p class="text-sm">Stream unavailable</p>
-                                    <button onclick="location.reload()" class="mt-2 px-3 py-1 bg-blue-600 rounded text-sm">Retry</button>
+                                    <p class="text-sm font-medium mb-2">Stream unavailable</p>
+                                    <button onclick="location.reload()" class="mt-3 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-sm font-medium transition-all">
+                                        Retry Connection
+                                    </button>
                                 </div>
                             `;
                             updateConnectionStatus(camera.id, 'failed');
