@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -11,7 +11,9 @@ class CameraBase(BaseModel):
 
 
 class CameraCreate(CameraBase):
-    pass
+    room_id: Optional[int] = None
+    position_config: Optional[Dict[str, Any]] = None
+    overlap_zones: Optional[List[Dict[str, Any]]] = None
 
 
 class CameraUpdate(BaseModel):
@@ -19,10 +21,16 @@ class CameraUpdate(BaseModel):
     rtsp_main: Optional[str] = None
     rtsp_sub: Optional[str] = None
     location: Optional[str] = None
+    room_id: Optional[int] = None
+    position_config: Optional[Dict[str, Any]] = None
+    overlap_zones: Optional[List[Dict[str, Any]]] = None
 
 
 class CameraResponse(CameraBase):
     id: int
+    room_id: Optional[int] = None
+    position_config: Optional[Dict[str, Any]] = None
+    overlap_zones: Optional[List[Dict[str, Any]]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

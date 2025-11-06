@@ -22,7 +22,7 @@ class PeopleDetector:
     """
     
     def __init__(self, model_size: str = "yolo11m.pt", conf_threshold: float = 0.5, 
-                 bytetrack_threshold: float = 0.6):
+                 bytetrack_threshold: float = 0.6, global_tracker=None):
         """
         Initialize the people detector with ByteTrack and DeepSORT
         
@@ -30,6 +30,7 @@ class PeopleDetector:
             model_size: YOLO model size (yolo11n, yolo11s, yolo11m, yolo11l, yolo11x)
             conf_threshold: Confidence threshold for detections (0.0-1.0)
             bytetrack_threshold: Confidence threshold for ByteTrack certainty (0.0-1.0)
+            global_tracker: GlobalPersonTracker instance for cross-camera tracking
         """
         print(f"Loading {model_size} model...")
         
@@ -47,6 +48,7 @@ class PeopleDetector:
         
         self.conf_threshold = conf_threshold
         self.bytetrack_threshold = bytetrack_threshold
+        self.global_tracker = global_tracker  # Store global tracker
         
         # Initialize ByteTrack tracker per camera
         self.byte_trackers = {}
@@ -61,7 +63,8 @@ class PeopleDetector:
             'history': deque(maxlen=100),  # Store last 100 counts
             'last_update': None,
             'bytetrack_confident': 0,
-            'deepsort_assisted': 0
+            'deepsort_assisted': 0,
+            'room_id': None  # Store room_id for cross-camera tracking
         })
         
         print(f"✅ {model_size} loaded successfully")
@@ -228,10 +231,19 @@ class PeopleDetector:
                     }
                     self.camera_tracks[camera_id]['deepsort_assisted'] += 1
         
-        # Step 5: Update tracking data
+        # Step 5: Apply global cross-camera tracking if room is configured
+        room_id = self.camera_tracks[camera_id].get('room_id')
+        global_mapping = {}
+        if self.global_tracker and room_id:
+            global_mapping = self.global_tracker.update_tracks(
+                room_id, camera_id, frame, confident_tracks
+            )
+        
+        # Step 6: Update tracking data
         people_count = len(confident_tracks)
         self.camera_tracks[camera_id]['count'] = people_count
         self.camera_tracks[camera_id]['tracks'] = confident_tracks
+        self.camera_tracks[camera_id]['global_mapping'] = global_mapping
         self.camera_tracks[camera_id]['last_update'] = datetime.now()
         self.camera_tracks[camera_id]['last_frame'] = frame  # Store frame for visualization
         self.camera_tracks[camera_id]['history'].append({
@@ -283,6 +295,17 @@ class PeopleDetector:
             List of statistics for each camera
         """
         return [self.get_camera_stats(cam_id) for cam_id in self.camera_tracks.keys()]
+    
+    def set_camera_room(self, camera_id: int, room_id: int):
+        """
+        Set the room_id for a camera to enable cross-camera tracking
+        
+        Args:
+            camera_id: Camera identifier
+            room_id: Room identifier
+        """
+        self.camera_tracks[camera_id]['room_id'] = room_id
+        print(f"✅ Camera {camera_id} assigned to room {room_id} for cross-camera tracking")
     
     def draw_tracks(self, frame: np.ndarray, camera_id: int) -> np.ndarray:
         """

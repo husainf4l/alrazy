@@ -15,3 +15,8 @@ async def dashboard(request: Request):
 @router.get("/cameras-page", response_class=HTMLResponse)
 async def cameras_page(request: Request):
     return templates.TemplateResponse("cameras.html", {"request": request})
+
+
+@router.get("/rooms-page", response_class=HTMLResponse)
+async def rooms_page(request: Request):
+    return templates.TemplateResponse("rooms.html", {"request": request})

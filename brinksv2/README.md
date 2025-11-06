@@ -1,107 +1,160 @@
-# Brinks V2 - Security Camera System
+````markdown
+# Brinks V2 - AI-Powered People Detection System
 
-Modern security camera monitoring system with real-time WebRTC streaming.
+A modern, real-time people detection and tracking system with cross-camera tracking capabilities, built with YOLO11, ByteTrack, and DeepSORT.
 
-## Features
+## 🚀 Features
 
-- 🎥 **Real-time Video Streaming** - WebRTC for sub-second latency
-- 📊 **Modern Dashboard** - Beautiful responsive UI with Tailwind CSS
-- 🗄️ **Database Management** - PostgreSQL for camera configuration
-- 🔄 **Dynamic Loading** - Cameras auto-loaded from database
-- 🎯 **High Quality** - Main stream with adaptive bitrate
-- 🚀 **Production Ready** - PM2 process management
+- 🎥 **Real-time People Detection** - YOLO11m model with GPU acceleration
+- � **Multi-Camera Support** - Monitor multiple RTSP camera streams simultaneously
+- 🏃 **ByteTrack Integration** - Fast and accurate single-camera tracking (30 FPS)
+- � **DeepSORT ReID** - Advanced re-identification for uncertain tracks
+- 🌐 **Cross-Camera Tracking** - Track people across multiple overlapping cameras
+- 🏠 **Room Management** - Group cameras by physical location for accurate people counting
+- 💎 **Modern UI** - Apple-inspired interface built with Tailwind CSS
+- 🚀 **REST API** - Complete FastAPI backend with automatic documentation
+- 📊 **Real-time Statistics** - Live person counting and tracking metrics
 
-## Tech Stack
+## 📋 Requirements
 
-### Backend
-- **FastAPI** - Modern Python web framework
-- **PostgreSQL** - Database for camera configuration
-- **SQLAlchemy** - ORM for database operations
-
-### Video Streaming
-- **RTSPtoWebRTC** - Go-based RTSP to WebRTC converter
-- **WebRTC** - Real-time peer-to-peer streaming
-- **RTSP** - Camera protocol support
-
-### Frontend
-- **Tailwind CSS** - Modern utility-first CSS
-- **Vanilla JavaScript** - Native WebRTC API
-
-## Architecture
-
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Browser   │────────▶│  FastAPI     │────────▶│ PostgreSQL  │
-│  Dashboard  │         │  (Port 8001) │         │             │
-└─────────────┘         └──────────────┘         └─────────────┘
-      │                                                  │
-      │ WebRTC                                          │ Queries
-      │                                                  │
-      ▼                                                  ▼
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   WebRTC    │────────▶│   RTSP       │────────▶│  Cameras    │
-│   Server    │         │   Streams    │         │  Database   │
-│ (Port 8083) │         │              │         │             │
-└─────────────┘         └──────────────┘         └─────────────┘
-```
-
-## Setup
-
-### Prerequisites
 - Python 3.12+
-- Go 1.25+
+- CUDA-capable GPU (recommended, RTX 4070 Ti SUPER or better)
 - PostgreSQL database
-- UV package manager (optional, faster than pip)
+- RTSP camera streams
+- Go 1.25+ (for WebRTC server)
 
-### Installation
+## 🛠️ Installation
 
-1. **Clone the repository**
-   ```bash
-   cd /home/husain/alrazy/brinksv2
-   ```
-
-2. **Create Python virtual environment**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-3. **Install Python dependencies**
-   ```bash
-   uv pip install fastapi uvicorn sqlalchemy psycopg2-binary jinja2
-   # or use pip:
-   # pip install fastapi uvicorn sqlalchemy psycopg2-binary jinja2
-   ```
-
-4. **Configure database**
-   Edit `database.py` with your PostgreSQL credentials:
-   ```python
-   DATABASE_URL = "postgresql://user:password@host:port/database"
-   ```
-
-5. **Build WebRTC server**
-   ```bash
-   cd RTSPtoWebRTC
-   go build -o rtsp-webrtc-server
-   ```
-
-### Running with PM2
-
+### 1. Clone the repository
 ```bash
-# Start all services
+cd /home/husain/alrazy/brinksv2
+```
+
+### 2. Create virtual environment
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+# or use UV for faster installation:
+uv pip install -r requirements.txt
+```
+
+### 4. Configure environment
+```bash
+cp .env.example .env
+# Edit .env with your configuration (database, model paths, etc.)
+```
+
+### 5. Download YOLO model
+Place `yolo11m.pt` in the project root or specify path in `.env`
+
+### 6. Initialize database
+```bash
+python -c "from database import init_db; init_db()"
+```
+
+### 7. Build WebRTC server
+```bash
+cd RTSPtoWebRTC
+go build -o rtsp-webrtc-server
+cd ..
+```
+
+## 🚦 Usage
+
+### Start with PM2 (Production)
+```bash
 pm2 start ecosystem.config.json
-
-# View status
 pm2 status
-
-# View logs
 pm2 logs
+```
 
-# Restart services
-pm2 restart all
+### Start manually (Development)
+```bash
+# Terminal 1: Start FastAPI backend
+source venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
-# Stop services
-pm2 stop all
+# Terminal 2: Start WebRTC server
+cd RTSPtoWebRTC
+./rtsp-webrtc-server
+```
+
+### Access the application
+- **Dashboard**: http://localhost:8001/dashboard
+- **Cameras**: http://localhost:8001/cameras-page
+- **Rooms**: http://localhost:8001/rooms-page
+- **API Docs**: http://localhost:8001/docs
+
+## 📁 Project Structure
+
+```
+brinksv2/
+├── config.py                 # ✨ Configuration management (NEW)
+├── database.py              # ✨ Enhanced database with pooling (IMPROVED)
+├── main.py                  # FastAPI application entry point
+│
+├── models/                  # SQLAlchemy ORM models
+│   ├── __init__.py         # ✨ Proper exports (NEW)
+│   ├── camera.py           # Camera and DetectionCount models
+│   └── room.py             # Room model for grouping cameras
+│
+├── schemas/                 # Pydantic schemas for validation
+│   ├── __init__.py         # ✨ Proper exports (NEW)
+│   ├── camera.py
+│   ├── detection.py
+│   └── room.py
+│
+├── routes/                  # FastAPI route handlers
+│   ├── __init__.py         # ✨ Proper exports (NEW)
+│   ├── cameras.py          # Camera CRUD operations
+│   ├── dashboard.py        # Dashboard page routing
+│   ├── detections.py       # Detection data endpoints
+│   ├── visualization.py    # Video stream visualization
+│   └── rooms.py            # Room management
+│
+├── services/                # Business logic layer
+│   ├── __init__.py         # ✨ Proper exports (NEW)
+│   ├── people_detection.py         # Core detection service
+│   └── cross_camera_tracking.py   # Global tracking logic
+│
+├── utils/                   # ✨ Utility modules (NEW)
+│   ├── __init__.py
+│   ├── logger.py           # ✨ Centralized logging (NEW)
+│   └── decorators.py       # ✨ Retry and timing decorators (NEW)
+│
+├── templates/               # HTML templates
+│   ├── dashboard.html
+│   ├── cameras.html
+│   └── rooms.html
+│
+├── scripts/                 # ✨ Utility scripts (ORGANIZED)
+│   ├── migrate_add_rooms.py
+│   ├── setup_example_room.py
+│   ├── fix_cascade_delete.py
+│   └── test_all_cameras.py
+│
+├── docs/                    # ✨ Documentation (ORGANIZED)
+│   ├── BYTETRACK_IMPLEMENTATION.md
+│   ├── MULTI_CAMERA_TRACKING.md
+│   ├── QUICK_START_ROOMS.md
+│   ├── TRACKING_IMPLEMENTATION.md
+│   └── VISUAL_GUIDE.md
+│
+├── RTSPtoWebRTC/           # Go WebRTC server
+│   ├── main.go
+│   ├── database.go
+│   └── config.json
+│
+├── requirements.txt         # ✨ Python dependencies (NEW)
+├── .env.example            # ✨ Example environment variables (NEW)
+├── .gitignore              # ✨ Comprehensive ignore file (IMPROVED)
+├── ecosystem.config.json   # PM2 configuration
+└── README.md               # This file
 ```
 
 ## API Endpoints

@@ -8,38 +8,69 @@ from routes.dashboard import router as pages_router
 from routes.cameras import router as cameras_router
 from routes.detections import router as detections_router
 from routes.visualization import router as visualization_router
+from routes.rooms import router as rooms_router
 from routes import visualization
 from database import engine, Base, SessionLocal
 from services.people_detection import PeopleDetector, RTSPPeopleCounter
+from services.cross_camera_tracking import GlobalPersonTracker
+
+# Import ALL models before creating tables (order matters for foreign keys)
+from models.room import Room
 from models.camera import Camera, DetectionCount
 
 # Global detection service instances
 people_detector = None
 people_counter = None
+global_person_tracker = None
 
 
 def start_detection_service():
     """Initialize and start people detection service"""
-    global people_detector, people_counter
+    global people_detector, people_counter, global_person_tracker
     
     print("🚀 Initializing people detection service...")
     
-    # Initialize detector with YOLO11m + ByteTrack + DeepSORT
+    # Initialize cross-camera tracker first
+    global_person_tracker = GlobalPersonTracker(
+        similarity_threshold=0.6,
+        time_window=3  # 3 seconds for matching across cameras
+    )
+    
+    # Initialize detector with YOLO11m + ByteTrack + DeepSORT + Global Tracker
     people_detector = PeopleDetector(
         model_size="yolo11m.pt", 
         conf_threshold=0.5,
-        bytetrack_threshold=0.6  # Threshold for ByteTrack confidence
+        bytetrack_threshold=0.6,  # Threshold for ByteTrack confidence
+        global_tracker=global_person_tracker  # Pass global tracker
     )
     
     # Initialize counter with 30 FPS processing (ByteTrack requirement)
     people_counter = RTSPPeopleCounter(people_detector, process_fps=30)
     
-    # Load cameras from database and start detection
+    # Load cameras and rooms from database
     db = SessionLocal()
     cameras_list = db.query(Camera).all()
+    rooms_list = db.query(Room).all()
+    
+    # Configure overlap zones from room configuration
+    for room in rooms_list:
+        if room.overlap_config:
+            for overlap in room.overlap_config.get('overlaps', []):
+                global_person_tracker.configure_overlap_zone(
+                    room.id,
+                    overlap['camera_id_1'],
+                    overlap['camera_id_2'],
+                    overlap['polygon']
+                )
+    
+    # Set room_id for cameras to enable cross-camera tracking
+    for camera in cameras_list:
+        if camera.room_id:
+            people_detector.set_camera_room(camera.id, camera.room_id)
+    
     db.close()
     
-    print(f"📹 Starting detection on {len(cameras_list)} cameras...")
+    print(f"📹 Starting detection on {len(cameras_list)} cameras in {len(rooms_list)} rooms...")
     for camera in cameras_list:
         people_counter.start_stream(camera.id, camera.rtsp_main)
         time.sleep(1)  # Stagger stream starts
@@ -79,7 +110,9 @@ def save_detection_counts():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    # Startup
+    # Startup - Clear and refresh metadata to ensure latest schema
+    Base.metadata.clear()
+    Base.metadata.reflect(bind=engine)
     Base.metadata.create_all(bind=engine)
     
     # Start detection service in background thread
@@ -132,6 +165,7 @@ app.include_router(pages_router)
 app.include_router(cameras_router)
 app.include_router(detections_router)
 app.include_router(visualization_router)
+app.include_router(rooms_router)
 
 @app.get("/")
 async def root():
