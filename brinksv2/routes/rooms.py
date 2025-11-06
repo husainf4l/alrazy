@@ -13,6 +13,7 @@ from schemas.room import (
     RoomWithCameras, RoomPersonCount
 )
 from schemas.camera import CameraResponse
+from schemas.room_layout import RoomLayout, RoomLayoutUpdate, RoomLayoutResponse
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -191,4 +192,137 @@ def get_room_person_count(room_id: int, db: Session = Depends(get_db)):
         'room_id': room_id,
         'room_name': room.name,
         **stats
+    }
+
+
+@router.put("/{room_id}/person/{global_id}/name")
+def set_person_name(room_id: int, global_id: int, name: str, db: Session = Depends(get_db)):
+    """
+    Assign a name to a tracked person in a room
+    
+    Args:
+        room_id: Room ID
+        global_id: Global person ID from tracking
+        name: Name to assign to the person
+    """
+    from main import global_person_tracker
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    success = global_person_tracker.set_person_name(room_id, global_id, name)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Person not found or no longer active")
+    
+    return {
+        "message": f"Name '{name}' assigned to person {global_id}",
+        "room_id": room_id,
+        "global_id": global_id,
+        "name": name
+    }
+
+
+@router.get("/{room_id}/person/{global_id}")
+def get_person_info(room_id: int, global_id: int, db: Session = Depends(get_db)):
+    """
+    Get information about a specific tracked person
+    
+    Args:
+        room_id: Room ID
+        global_id: Global person ID from tracking
+    """
+    from main import global_person_tracker
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    person_info = global_person_tracker.get_person_info(room_id, global_id)
+    
+    if not person_info:
+        raise HTTPException(status_code=404, detail="Person not found or no longer active")
+    
+    return person_info
+
+
+@router.get("/{room_id}/layout", response_model=RoomLayoutResponse)
+def get_room_layout(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get room layout with camera positions and overlap zones
+    """
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    return {
+        'room_id': room.id,
+        'room_name': room.name,
+        'dimensions': room.dimensions,
+        'camera_positions': room.camera_positions or [],
+        'overlap_zones': room.overlap_config.get('overlaps', []) if room.overlap_config else [],
+        'floor_plan_image': room.floor_plan_image,
+        'scale': room.layout_scale or 100
+    }
+
+
+@router.put("/{room_id}/layout")
+def update_room_layout(
+    room_id: int, 
+    layout: RoomLayoutUpdate, 
+    db: Session = Depends(get_db)
+):
+    """
+    Update room layout with camera positions and dimensions
+    """
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Update dimensions
+    if layout.dimensions:
+        room.dimensions = layout.dimensions.dict()
+    
+    # Update camera positions
+    if layout.camera_positions is not None:
+        room.camera_positions = [pos.dict() for pos in layout.camera_positions]
+        
+        # Also update Camera model position_config
+        for pos in layout.camera_positions:
+            camera = db.query(Camera).filter(Camera.id == pos.camera_id).first()
+            if camera:
+                camera.position_config = pos.dict()
+    
+    # Update overlap zones
+    if layout.overlap_zones is not None:
+        if not room.overlap_config:
+            room.overlap_config = {}
+        room.overlap_config['overlaps'] = [zone.dict() for zone in layout.overlap_zones]
+        
+        # Configure global tracker with new overlap zones
+        from main import global_person_tracker
+        for zone in layout.overlap_zones:
+            if len(zone.camera_ids) == 2:
+                global_person_tracker.configure_overlap_zone(
+                    room_id,
+                    zone.camera_ids[0],
+                    zone.camera_ids[1],
+                    [{'x': p.x, 'y': p.y} for p in zone.polygon_points]
+                )
+    
+    # Update floor plan image
+    if layout.floor_plan_image is not None:
+        room.floor_plan_image = layout.floor_plan_image
+    
+    # Update scale
+    if layout.scale is not None:
+        room.layout_scale = int(layout.scale)
+    
+    db.commit()
+    db.refresh(room)
+    
+    return {
+        'message': 'Layout updated successfully',
+        'room_id': room.id
     }

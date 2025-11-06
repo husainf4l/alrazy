@@ -309,7 +309,7 @@ class PeopleDetector:
     
     def draw_tracks(self, frame: np.ndarray, camera_id: int) -> np.ndarray:
         """
-        Draw bounding boxes and track IDs on frame - minimal clean overlay
+        Draw bounding boxes and names/IDs on frame - minimal clean overlay
         
         Args:
             frame: Input frame
@@ -323,6 +323,8 @@ class PeopleDetector:
         # Get tracks for this camera
         tracks = self.camera_tracks[camera_id].get('tracks', {})
         people_count = self.camera_tracks[camera_id].get('count', 0)
+        global_mapping = self.camera_tracks[camera_id].get('global_mapping', {})
+        room_id = self.camera_tracks[camera_id].get('room_id')
         
         # Draw each track with minimal design
         for track_id, track_data in tracks.items():
@@ -341,24 +343,38 @@ class PeopleDetector:
             # Draw bounding box with clean line
             cv2.rectangle(annotated, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
             
-            # Prepare minimal label - just the ID number
-            try:
-                if isinstance(track_id, str):
-                    if track_id.startswith("ds_"):
-                        abs_track_id = track_id[3:]
+            # Get global ID and name if available
+            global_id = global_mapping.get(track_id)
+            label = None
+            
+            if global_id and room_id and self.global_tracker:
+                # Try to get person info from global tracker
+                person_info = self.global_tracker.get_person_info(room_id, global_id)
+                if person_info and person_info.get('name'):
+                    label = person_info['name']
+            
+            # Fallback to track ID if no name
+            if not label:
+                try:
+                    if isinstance(track_id, str):
+                        if track_id.startswith("ds_"):
+                            abs_track_id = track_id[3:]
+                        else:
+                            abs_track_id = track_id
                     else:
-                        abs_track_id = track_id
+                        abs_track_id = abs(int(track_id))
+                except (ValueError, TypeError):
+                    abs_track_id = "?"
+                
+                if global_id:
+                    label = f"Person {global_id}"
                 else:
-                    abs_track_id = abs(int(track_id))
-            except (ValueError, TypeError):
-                abs_track_id = "?"
+                    label = f"#{abs_track_id}"
             
-            label = f"#{abs_track_id}"
-            
-            # Draw small label above bounding box
+            # Draw label above bounding box
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.5
-            thickness = 1
+            font_scale = 0.6
+            thickness = 2
             (label_width, label_height), baseline = cv2.getTextSize(label, font, font_scale, thickness)
             
             # Position label above box
@@ -366,14 +382,14 @@ class PeopleDetector:
             if label_y < label_height + 5:
                 label_y = bbox[1] + label_height + 8
             
-            # Draw label background (small, rounded)
+            # Draw label background (semi-transparent)
             cv2.rectangle(annotated, 
-                         (bbox[0], label_y - label_height - 3),
-                         (bbox[0] + label_width + 6, label_y + 2),
+                         (bbox[0], label_y - label_height - 5),
+                         (bbox[0] + label_width + 10, label_y + 3),
                          color, -1)
             
             # Draw label text in black for contrast
-            cv2.putText(annotated, label, (bbox[0] + 3, label_y - 1),
+            cv2.putText(annotated, label, (bbox[0] + 5, label_y - 1),
                        font, font_scale, (0, 0, 0), thickness)
         
         return annotated

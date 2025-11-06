@@ -42,5 +42,5 @@ class RoomPersonCount(BaseModel):
     room_id: int
     room_name: str
     unique_person_count: int
-    active_persons: List[Dict[str, Any]] = []
+    active_persons: List[Dict[str, Any]] = []  # Each person now includes 'name' field
     timestamp: str

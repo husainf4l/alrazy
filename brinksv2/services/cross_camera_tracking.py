@@ -226,7 +226,8 @@ class GlobalPersonTracker:
                     'last_camera': camera_id,
                     'last_bbox': bbox,
                     'visible_in_cameras': {camera_id: current_time},
-                    'in_overlap_zone': in_overlap
+                    'in_overlap_zone': in_overlap,
+                    'name': None  # Name can be assigned later
                 }
             
             # Store mapping
@@ -292,6 +293,7 @@ class GlobalPersonTracker:
             if current_time - person_profile['last_seen'] <= self.time_window:
                 active_persons.append({
                     'global_id': global_id,
+                    'name': person_profile.get('name'),
                     'last_camera': person_profile['last_camera'],
                     'last_seen': person_profile['last_seen'].isoformat(),
                     'visible_in_cameras': list(person_profile['visible_in_cameras'].keys()),
@@ -318,3 +320,44 @@ class GlobalPersonTracker:
             Mapping dict {local_track_id: global_person_id}
         """
         return self.camera_mappings[room_id].get(camera_id, {})
+    
+    def set_person_name(self, room_id: int, global_id: int, name: str) -> bool:
+        """
+        Assign a name to a tracked person
+        
+        Args:
+            room_id: Room identifier
+            global_id: Global person ID
+            name: Name to assign
+            
+        Returns:
+            True if successful, False if person not found
+        """
+        if global_id in self.room_persons[room_id]:
+            self.room_persons[room_id][global_id]['name'] = name
+            print(f"✅ Assigned name '{name}' to person {global_id} in room {room_id}")
+            return True
+        return False
+    
+    def get_person_info(self, room_id: int, global_id: int) -> Dict:
+        """
+        Get detailed information about a tracked person
+        
+        Args:
+            room_id: Room identifier
+            global_id: Global person ID
+            
+        Returns:
+            Person profile dictionary or None if not found
+        """
+        if global_id in self.room_persons[room_id]:
+            profile = self.room_persons[room_id][global_id]
+            return {
+                'global_id': global_id,
+                'name': profile.get('name'),
+                'first_seen': profile.get('first_seen', profile['last_seen']).isoformat(),
+                'last_seen': profile['last_seen'].isoformat(),
+                'last_camera': profile['last_camera'],
+                'visible_in_cameras': list(profile['visible_in_cameras'].keys())
+            }
+        return None

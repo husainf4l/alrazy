@@ -17,6 +17,14 @@ class Room(Base):
     floor_level = Column(String, nullable=True)  # e.g., "Ground Floor", "1st Floor"
     capacity = Column(Integer, nullable=True)  # Maximum room capacity
     
+    # Visual layout configuration
+    dimensions = Column(JSON, nullable=True)  # Room dimensions: {width, height, length} in meters
+    floor_plan_image = Column(Text, nullable=True)  # Base64 encoded floor plan image
+    layout_scale = Column(Integer, default=100)  # Scale: pixels per meter
+    
+    # Camera positioning in room
+    camera_positions = Column(JSON, nullable=True)  # Array of camera positions with FOV
+    
     # Metadata for cross-camera tracking configuration
     overlap_config = Column(JSON, nullable=True)  # Store overlap zones between cameras
     

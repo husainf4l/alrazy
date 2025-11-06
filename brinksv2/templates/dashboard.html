@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Brinks V2</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,39 +16,8 @@
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 antialiased">
-    <!-- Navigation Bar - Apple Style -->
-    <nav class="bg-white/80 backdrop-blur-2xl border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
-        <div class="max-w-7xl mx-auto px-6 sm:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center space-x-10">
-                    <a href="/" class="text-xl font-semibold text-gray-900 hover:text-gray-600 transition-colors tracking-tight">
-                        Brinks V2
-                    </a>
-                    <div class="hidden md:flex space-x-1">
-                        <a href="/dashboard" class="bg-gray-100 text-gray-900 px-4 py-2 rounded-full text-sm font-medium transition-all hover:bg-gray-200">
-                            Dashboard
-                        </a>
-                        <a href="/cameras-page" class="text-gray-600 px-4 py-2 rounded-full text-sm font-medium hover:text-gray-900 hover:bg-gray-100 transition-all">
-                            Cameras
-                        </a>
-                        <a href="/rooms-page" class="text-gray-600 px-4 py-2 rounded-full text-sm font-medium hover:text-gray-900 hover:bg-purple-100 transition-all bg-purple-50">
-                            🚪 Rooms
-                        </a>
-                        <a href="/docs" target="_blank" class="text-gray-600 px-4 py-2 rounded-full text-sm font-medium hover:text-gray-900 hover:bg-gray-100 transition-all">
-                            API Docs
-                        </a>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <div class="flex items-center space-x-2 bg-green-50 px-3 py-1.5 rounded-full">
-                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                        <span class="text-xs font-medium text-green-700">Live</span>
-                    </div>
-                    <span class="text-sm text-gray-500 font-medium" id="currentTime"></span>
-                </div>
-            </div>
-        </div>
-    </nav>
+    <!-- Navigation Bar Component -->
+    {% include 'navbar.html' %}
 
     <!-- Main Content -->
     <div class="w-full px-3 py-3">
@@ -86,7 +56,14 @@
             </div>
             <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
                 <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">People</p>
-                <p class="text-xl font-semibold text-gray-900" id="totalPeople">-</p>
+                <div class="flex items-center space-x-2">
+                    <p class="text-xl font-semibold text-gray-900" id="totalPeople">-</p>
+                    <button onclick="openPeopleModal()" class="text-blue-600 hover:text-blue-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="bg-white/70 backdrop-blur-xl rounded-lg p-3 shadow-sm border border-gray-200/60">
                 <p class="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">AI Status</p>
@@ -103,6 +80,12 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                         </svg>
                         <span class="text-sm">Refresh</span>
+                    </button>
+                    <button id="managePeopleBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all duration-200 flex items-center space-x-2 font-medium shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-sm">Manage People</span>
                     </button>
                     <div class="flex items-center space-x-2 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
                         <div class="h-1.5 w-1.5 bg-green-500 rounded-full"></div>
@@ -121,6 +104,28 @@
                             <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"></path>
                         </svg>
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- People Management Modal -->
+        <div id="peopleModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl font-bold text-gray-900">Tracked People</h2>
+                        <button onclick="closePeopleModal()" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="peopleList" class="p-6 overflow-y-auto max-h-[60vh]">
+                    <!-- People list will be loaded here -->
+                    <div class="text-center text-gray-500 py-8">
+                        Loading...
+                    </div>
                 </div>
             </div>
         </div>
@@ -252,14 +257,6 @@
         const WEBRTC_URL = 'http://127.0.0.1:8083';
         let cameras = [];
         let peerConnections = {};
-
-        // Update time
-        function updateTime() {
-            const now = new Date();
-            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
-        }
-        setInterval(updateTime, 1000);
-        updateTime();
 
         // Load cameras from database
         async function loadCameras() {
@@ -572,18 +569,15 @@
         // Fetch and update people detection counts
         async function updatePeopleCounts() {
             try {
+                // Get per-camera stats
                 const response = await fetch(`${API_URL}/detections/live`);
                 if (!response.ok) return;
                 
                 const stats = await response.json();
                 
-                // Update total people count
-                const totalPeople = stats.reduce((sum, stat) => sum + stat.current_count, 0);
-                document.getElementById('totalPeople').textContent = totalPeople;
-                
                 // Update detection status
                 document.getElementById('detectionStatus').textContent = 'Active';
-                document.getElementById('detectionStatus').className = 'text-2xl font-bold text-green-600';
+                document.getElementById('detectionStatus').className = 'text-base font-semibold text-green-600';
                 
                 // Update individual camera counts
                 stats.forEach(stat => {
@@ -591,19 +585,49 @@
                     if (countElement) {
                         countElement.innerHTML = `
                             <span class="text-lg">${stat.current_count}</span>
-                            <span class="text-xs text-gray-500 ml-1">(avg: ${stat.average_count})</span>
                         `;
                     }
                 });
+                
+                // Get unique people count from rooms (deduplicated across cameras)
+                let totalUniquePeople = 0;
+                try {
+                    // Get all rooms and their unique counts
+                    const roomsResponse = await fetch(`${API_URL}/api/rooms/`);
+                    if (roomsResponse.ok) {
+                        const rooms = await roomsResponse.json();
+                        for (const room of rooms) {
+                            try {
+                                const countResponse = await fetch(`${API_URL}/api/rooms/${room.id}/person-count`);
+                                if (countResponse.ok) {
+                                    const countData = await countResponse.json();
+                                    // Use unique_person_count from global tracker
+                                    totalUniquePeople += countData.unique_person_count || 0;
+                                }
+                            } catch (e) {
+                                // If room endpoint fails, fallback to camera sum
+                                console.warn(`Room ${room.id} count failed, using camera counts`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Fallback: sum camera counts (may double-count)
+                    totalUniquePeople = stats.reduce((sum, stat) => sum + stat.current_count, 0);
+                }
+                
+                document.getElementById('totalPeople').textContent = totalUniquePeople;
+                
             } catch (error) {
                 console.error('Error fetching people counts:', error);
                 document.getElementById('detectionStatus').textContent = 'Offline';
-                document.getElementById('detectionStatus').className = 'text-2xl font-bold text-gray-400';
+                document.getElementById('detectionStatus').className = 'text-base font-semibold text-gray-400';
             }
         }
 
         // Event listeners
         document.getElementById('refreshBtn').addEventListener('click', loadCameras);
+        
+        document.getElementById('managePeopleBtn').addEventListener('click', openPeopleModal);
 
         document.getElementById('gridView2x2').addEventListener('click', () => {
             document.getElementById('cameraGrid').className = 'grid grid-cols-1 lg:grid-cols-2 gap-4 grid-2x2';
@@ -612,6 +636,120 @@
         document.getElementById('gridView1x4').addEventListener('click', () => {
             document.getElementById('cameraGrid').className = 'grid gap-4 grid-1x4';
         });
+        
+        // People management functions
+        async function openPeopleModal() {
+            const modal = document.getElementById('peopleModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            await loadTrackedPeople();
+        }
+        
+        function closePeopleModal() {
+            const modal = document.getElementById('peopleModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        
+        async function loadTrackedPeople() {
+            const peopleList = document.getElementById('peopleList');
+            peopleList.innerHTML = '<div class="text-center text-gray-500 py-8">Loading...</div>';
+            
+            try {
+                const roomsResponse = await fetch(`${API_URL}/api/rooms/`);
+                if (!roomsResponse.ok) return;
+                
+                const rooms = await roomsResponse.json();
+                let html = '';
+                
+                for (const room of rooms) {
+                    const countResponse = await fetch(`${API_URL}/api/rooms/${room.id}/person-count`);
+                    if (!countResponse.ok) continue;
+                    
+                    const countData = await countResponse.json();
+                    
+                    if (countData.active_persons.length > 0) {
+                        html += `
+                            <div class="mb-6">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-3">${room.name}</h3>
+                                <div class="space-y-3">
+                        `;
+                        
+                        for (const person of countData.active_persons) {
+                            const personName = person.name || `Person ${person.global_id}`;
+                            const isNamed = person.name !== null;
+                            
+                            html += `
+                                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex-1">
+                                            <div class="flex items-center space-x-2 mb-2">
+                                                <span class="text-lg font-semibold text-gray-900">${personName}</span>
+                                                ${!isNamed ? '<span class="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded-full">Not Named</span>' : ''}
+                                                <span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                                                    Cameras: ${person.visible_in_cameras.join(', ')}
+                                                </span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <input type="text" 
+                                                       id="name-${room.id}-${person.global_id}" 
+                                                       value="${person.name || ''}" 
+                                                       placeholder="Enter name..."
+                                                       class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                <button onclick="savePersonName(${room.id}, ${person.global_id})" 
+                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                                                    Save
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        html += `
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
+                if (html === '') {
+                    html = '<div class="text-center text-gray-500 py-8">No tracked people at the moment</div>';
+                }
+                
+                peopleList.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading tracked people:', error);
+                peopleList.innerHTML = '<div class="text-center text-red-500 py-8">Error loading tracked people</div>';
+            }
+        }
+        
+        async function savePersonName(roomId, globalId) {
+            const input = document.getElementById(`name-${roomId}-${globalId}`);
+            const name = input.value.trim();
+            
+            if (!name) {
+                alert('Please enter a name');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/api/rooms/${roomId}/person/${globalId}/name?name=${encodeURIComponent(name)}`, {
+                    method: 'PUT'
+                });
+                
+                if (response.ok) {
+                    alert(`✅ Name saved: ${name}`);
+                    await loadTrackedPeople();
+                } else {
+                    alert('❌ Failed to save name');
+                }
+            } catch (error) {
+                console.error('Error saving name:', error);
+                alert('❌ Error saving name');
+            }
+        }
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {

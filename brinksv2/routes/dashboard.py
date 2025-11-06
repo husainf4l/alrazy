@@ -20,3 +20,8 @@ async def cameras_page(request: Request):
 @router.get("/rooms-page", response_class=HTMLResponse)
 async def rooms_page(request: Request):
     return templates.TemplateResponse("rooms.html", {"request": request})
+
+
+@router.get("/room-designer", response_class=HTMLResponse)
+async def room_designer(request: Request):
+    return templates.TemplateResponse("room_designer.html", {"request": request})

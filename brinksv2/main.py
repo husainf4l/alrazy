@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import threading
 import time
@@ -32,8 +33,8 @@ def start_detection_service():
     
     # Initialize cross-camera tracker first
     global_person_tracker = GlobalPersonTracker(
-        similarity_threshold=0.6,
-        time_window=3  # 3 seconds for matching across cameras
+        similarity_threshold=0.4,  # Lower threshold for more aggressive matching across cameras
+        time_window=5  # 5 seconds for matching across cameras (increased for person movement)
     )
     
     # Initialize detector with YOLO11m + ByteTrack + DeepSORT + Global Tracker
@@ -166,6 +167,9 @@ app.include_router(cameras_router)
 app.include_router(detections_router)
 app.include_router(visualization_router)
 app.include_router(rooms_router)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def root():
