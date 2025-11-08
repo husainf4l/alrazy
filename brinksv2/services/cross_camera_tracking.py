@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import cv2
 from shapely.geometry import Point, Polygon
+import asyncio
 
 
 class GlobalPersonTracker:
@@ -300,9 +301,27 @@ class GlobalPersonTracker:
                     'in_overlap_zone': person_profile.get('in_overlap_zone', False)
                 })
         
+        current_count = len(active_persons)
+        
+        # Check for people leaving and send SMS alert (synchronous check)
+        try:
+            from services.sms_alert_service import sms_alert_service
+            # Print for debugging
+            print(f"🔍 Checking SMS alert for room {room_id}: count={current_count}")
+            # Check synchronously to avoid event loop issues
+            sms_alert_service.check_and_alert_sync(
+                room_id=room_id,
+                current_count=current_count,
+                room_name=f"Room {room_id}"
+            )
+        except Exception as e:
+            print(f"⚠️ SMS alert check failed: {e}")
+            import traceback
+            traceback.print_exc()
+        
         return {
             'room_id': room_id,
-            'unique_person_count': len(active_persons),
+            'unique_person_count': current_count,
             'active_persons': active_persons,
             'timestamp': current_time.isoformat()
         }

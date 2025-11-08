@@ -325,8 +325,12 @@
     </style>
 
     <script>
-        const API_URL = 'http://127.0.0.1:8001';
-        const WEBRTC_URL = 'http://127.0.0.1:8083';
+        // Use relative URLs to work with current domain
+        const API_URL = window.location.origin;
+        
+        // Use proxied WebRTC connection through nginx
+        const WEBRTC_URL = `${window.location.protocol}//${window.location.host}/webrtc`;
+            
         let cameras = [];
         let peerConnections = {};
 

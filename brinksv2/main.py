@@ -10,6 +10,7 @@ from routes.cameras import router as cameras_router
 from routes.detections import router as detections_router
 from routes.visualization import router as visualization_router
 from routes.rooms import router as rooms_router
+from routes.sms_alerts import router as sms_alerts_router
 from routes import visualization
 from database import engine, Base, SessionLocal
 from services.people_detection import PeopleDetector, RTSPPeopleCounter
@@ -167,6 +168,7 @@ app.include_router(cameras_router)
 app.include_router(detections_router)
 app.include_router(visualization_router)
 app.include_router(rooms_router)
+app.include_router(sms_alerts_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
