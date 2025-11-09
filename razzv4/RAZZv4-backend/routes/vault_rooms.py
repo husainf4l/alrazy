@@ -4,46 +4,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import VaultRoom, Camera
 from typing import List
-import httpx
-import base64
-import json
-import uuid
+import logging
 
-from fastapi import APIRouter, HTTPException, Form, Depends, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
-from database import get_db
-from models import VaultRoom, Camera
-from typing import List
-import httpx
-import base64
-import json
-import uuid
-
-def generate_webrtc_offer():
-    """Generate a minimal WebRTC SDP offer for the RTSP->WebRTC bridge"""
-    # A proper minimal SDP offer for a video stream
-    sdp = """v=0
-o=- 0 0 IN IP4 127.0.0.1
-s=-
-t=0 0
-a=group:BUNDLE 0
-a=msid-semantic: WMS
-m=video 0 UDP/TLS/RTP/SAVPF 96
-c=IN IP4 127.0.0.1
-a=rtcp:9 IN IP4 127.0.0.1
-a=ice-ufrag:razzv4
-a=ice-pwd:razzv4razzv4
-a=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00
-a=setup:actpass
-a=mid:0
-a=sendrecv
-a=rtcp-mux
-a=rtpmap:96 H264/90000
-"""
-    # Base64 encode the SDP
-    sdp_b64 = base64.b64encode(sdp.encode()).decode()
-    return sdp_b64
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/vault-rooms", tags=["vault_rooms"])
 
@@ -253,66 +216,25 @@ async def delete_vault_room(room_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{room_id}/cameras/webrtc")
 async def get_camera_webrtc_streams(room_id: int, db: Session = Depends(get_db)):
-    """Get WebRTC streams for all cameras in a vault room"""
+    """Get WebRTC streams for all cameras in a vault room - returns stream IDs only"""
     try:
         vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
         if not vault_room:
             raise HTTPException(status_code=404, detail="Vault room not found")
         
-        # Get all cameras for this room
+        # Get all cameras for this room - just return camera info
+        # The WebRTC connection will be established directly from the browser
         cameras_data = []
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for camera in vault_room.cameras:
-                if not camera.is_active or not camera.rtsp_url:
-                    continue
-                
-                try:
-                    # POST RTSP URL + WebRTC SDP offer to RTSPtoWebRTC service
-                    # Generate a valid SDP offer for the WebRTC handshake
-                    sdp_offer = generate_webrtc_offer()
-                    
-                    response = await client.post(
-                        "http://localhost:8083/stream",
-                        data={
-                            "url": camera.rtsp_url,
-                            "sdp64": sdp_offer
-                        },
-                        headers={"Accept": "application/json"},
-                        timeout=20.0
-                    )
-                    
-                    if response.status_code == 200:
-                        webrtc_data = response.json()
-                        cameras_data.append({
-                            "id": camera.id,
-                            "name": camera.name,
-                            "rtsp_url": camera.rtsp_url,
-                            "webrtc_sdp": webrtc_data.get("sdp64"),
-                            "tracks": webrtc_data.get("tracks", [])
-                        })
-                    else:
-                        # Log full response body for easier debugging (the RTSP->WebRTC service returns JSON error)
-                        try:
-                            err_json = response.json()
-                        except Exception:
-                            err_json = response.text
-                        print(f"ERROR: Failed to get WebRTC stream for camera {camera.id}: status={response.status_code}, body={err_json}")
-                        cameras_data.append({
-                            "id": camera.id,
-                            "name": camera.name,
-                            "rtsp_url": camera.rtsp_url,
-                            "error": f"Failed to initialize stream: {response.status_code}"
-                        })
-                        
-                except Exception as e:
-                    print(f"ERROR: Exception getting WebRTC for camera {camera.id}: {str(e)}")
-                    cameras_data.append({
-                        "id": camera.id,
-                        "name": camera.name,
-                        "rtsp_url": camera.rtsp_url,
-                        "error": str(e)
-                    })
+        for camera in vault_room.cameras:
+            if not camera.is_active or not camera.rtsp_url:
+                continue
+            
+            cameras_data.append({
+                "id": camera.id,
+                "name": camera.name,
+                "rtsp_url": camera.rtsp_url  # Frontend will use this to connect
+            })
         
         return {
             "room_id": room_id,
@@ -394,4 +316,296 @@ async def accept_webrtc_answer(
         print(f"ERROR: Exception in webrtc-answer endpoint: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting camera streams: {str(e)}")
+
+
+@router.get("/{room_id}/people-count")
+async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get current people count for a vault room
+    Returns total count across all cameras
+    """
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Get individual camera counts
+        camera_counts = []
+        for camera in vault_room.cameras:
+            if camera.is_active:
+                camera_counts.append({
+                    "camera_id": camera.id,
+                    "camera_name": camera.name,
+                    "people_count": camera.current_people_count or 0
+                })
+        
+        return {
+            "room_id": room_id,
+            "room_name": vault_room.name,
+            "total_people_count": vault_room.current_people_count or 0,
+            "cameras": camera_counts
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to get people count: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting people count: {str(e)}")
+
+
+@router.get("/all/people-counts")
+async def get_all_rooms_people_counts(db: Session = Depends(get_db)):
+    """
+    Get people counts for all vault rooms
+    """
+    try:
+        vault_rooms = db.query(VaultRoom).all()
+        
+        results = []
+        for room in vault_rooms:
+            camera_counts = []
+            for camera in room.cameras:
+                if camera.is_active:
+                    camera_counts.append({
+                        "camera_id": camera.id,
+                        "camera_name": camera.name,
+                        "people_count": camera.current_people_count or 0
+                    })
+            
+            results.append({
+                "room_id": room.id,
+                "room_name": room.name,
+                "total_people_count": room.current_people_count or 0,
+                "cameras": camera_counts
+            })
+        
+        return {"rooms": results}
+    
+    except Exception as e:
+        print(f"ERROR: Failed to get people counts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting people counts: {str(e)}")
+
+
+@router.get("/{room_id}/tracking-stats")
+async def get_room_tracking_stats(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get tracking statistics for cameras in a vault room
+    """
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import here to avoid circular dependency
+        from main import camera_service, tracking_service
+        
+        camera_stats = []
+        for camera in vault_room.cameras:
+            if camera.is_active and camera_service and tracking_service:
+                processor = camera_service.processors.get(camera.id)
+                if processor and processor.is_running:
+                    # Get stats from tracking service
+                    cam_tracks = tracking_service.camera_tracks.get(camera.id, {})
+                    stats = {
+                        "active_tracks": cam_tracks.get('count', 0),
+                        "bytetrack_confident": cam_tracks.get('bytetrack_confident', 0),
+                        "deepsort_assisted": cam_tracks.get('deepsort_assisted', 0),
+                        "last_update": cam_tracks.get('last_update').isoformat() if cam_tracks.get('last_update') else None
+                    }
+                    camera_stats.append({
+                        "camera_id": camera.id,
+                        "camera_name": camera.name,
+                        "tracking_enabled": True,
+                        "statistics": stats
+                    })
+                else:
+                    camera_stats.append({
+                        "camera_id": camera.id,
+                        "camera_name": camera.name,
+                        "tracking_enabled": False
+                    })
+        
+        return {
+            "room_id": room_id,
+            "room_name": vault_room.name,
+            "cameras": camera_stats
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to get tracking stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting tracking stats: {str(e)}")
+
+
+@router.get("/{room_id}/camera/{camera_id}/tracking-frame")
+async def get_camera_tracking_frame(room_id: int, camera_id: int, db: Session = Depends(get_db)):
+    """
+    Get the latest annotated frame with tracking visualization for a specific camera
+    Returns base64-encoded JPEG image
+    """
+    try:
+        import cv2
+        import base64
+        
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        camera = db.query(Camera).filter(
+            Camera.id == camera_id,
+            Camera.vault_room_id == room_id
+        ).first()
+        
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found")
+        
+        # Import here to avoid circular dependency
+        from main import camera_service
+        
+        if not camera_service:
+            raise HTTPException(status_code=503, detail="Camera service not available")
+        
+        processor = camera_service.processors.get(camera_id)
+        if not processor:
+            logger.warning(f"Camera processor not found for camera {camera_id}. Available: {list(camera_service.processors.keys())}")
+            raise HTTPException(status_code=404, detail="Camera processor not found or not started")
+        
+        if not processor.is_running:
+            logger.warning(f"Camera {camera_id} processor exists but is not running")
+            raise HTTPException(status_code=503, detail="Camera processor not running")
+        
+        # Get the latest annotated frame
+        if hasattr(processor, 'last_annotated_frame') and processor.last_annotated_frame is not None:
+            frame = processor.last_annotated_frame
+            
+            logger.debug(f"Encoding tracking frame for camera {camera_id}, shape: {frame.shape}, dtype: {frame.dtype}")
+            
+            # Encode frame as JPEG
+            success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not success:
+                logger.error(f"Failed to encode frame for camera {camera_id}")
+                raise HTTPException(status_code=500, detail="Failed to encode tracking frame")
+            
+            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            
+            logger.debug(f"Successfully encoded frame for camera {camera_id}, size: {len(frame_base64)} bytes")
+            
+            return {
+                "camera_id": camera_id,
+                "camera_name": camera.name,
+                "frame": frame_base64,
+                "frame_size": len(frame_base64),
+                "timestamp": processor.last_update_time.isoformat() if hasattr(processor, 'last_update_time') else None
+            }
+        else:
+            logger.info(f"No annotated frame available yet for camera {camera_id} (may be starting up or no detections)")
+            # Return a placeholder or 404
+            raise HTTPException(status_code=404, detail="No tracking frame available yet - camera may be starting up")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to get tracking frame: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error getting tracking frame: {str(e)}")
+
+
+@router.post("/{room_id}/rename-person")
+async def rename_person(
+    room_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Rename a person by their global ID"""
+    try:
+        data = await request.json()
+        global_id = data.get("global_id")
+        new_name = data.get("name")
+        
+        if not global_id or not new_name:
+            raise HTTPException(status_code=400, detail="global_id and name are required")
+        
+        # Validate room exists
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import tracking service
+        from main import tracking_service
+        
+        if not tracking_service:
+            raise HTTPException(status_code=503, detail="Tracking service not available")
+        
+        # Rename the person
+        success = tracking_service.set_person_name(int(global_id), new_name.strip())
+        
+        if success:
+            logger.info(f"Renamed person {global_id} to '{new_name}' in room {room_id}")
+            return {
+                "success": True,
+                "global_id": global_id,
+                "name": new_name,
+                "message": f"Person renamed to {new_name}"
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Person with global ID {global_id} not found")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming person: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error renaming person: {str(e)}")
+
+
+@router.get("/{room_id}/people")
+async def get_people_in_room(
+    room_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get list of all people currently in the room with their names and global IDs"""
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import tracking service
+        from main import tracking_service
+        
+        if not tracking_service:
+            raise HTTPException(status_code=503, detail="Tracking service not available")
+        
+        # Get all person names
+        all_names = tracking_service.get_all_person_names()
+        
+        # Get current people in this room's cameras
+        camera_ids = [cam.id for cam in vault_room.cameras]
+        people_list = []
+        
+        for camera_id in camera_ids:
+            if camera_id in tracking_service.camera_tracks:
+                tracks = tracking_service.camera_tracks[camera_id].get('tracks', {})
+                for track_id, track_data in tracks.items():
+                    global_id = track_data.get('global_id')
+                    if global_id and global_id not in [p['global_id'] for p in people_list]:
+                        people_list.append({
+                            'global_id': global_id,
+                            'name': track_data.get('name', f"Person {global_id}"),
+                            'camera_id': camera_id,
+                            'bbox': track_data.get('bbox')
+                        })
+        
+        return {
+            "room_id": room_id,
+            "room_name": vault_room.name,
+            "people_count": len(people_list),
+            "people": people_list
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting people list: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting people list: {str(e)}")

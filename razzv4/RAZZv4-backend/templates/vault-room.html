@@ -264,12 +264,19 @@
         function createRoomCard(room) {
             const isOnline = room.cameras.some(cam => cam.is_active);
             const statusColor = isOnline ? 'bg-green-500' : 'bg-gray-400';
+            const peopleCount = room.current_people_count || 0;
+            const peopleCountColor = peopleCount > 0 ? 'bg-blue-500' : 'bg-gray-400';
             
             return `
-                <div class="bg-white border border-gray-200 p-6">
+                <div class="bg-white border border-gray-200 p-6" data-room-id="${room.id}">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-lg font-medium text-gray-900">${escapeHtml(room.name)}</h3>
-                        <div class="w-3 h-3 ${statusColor} rounded-full"></div>
+                        <div class="flex items-center space-x-2">
+                            <div class="${peopleCountColor} text-white px-3 py-1 rounded-full text-xs font-bold room-people-count">
+                                ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}
+                            </div>
+                            <div class="w-3 h-3 ${statusColor} rounded-full"></div>
+                        </div>
                     </div>
                     
                     <div class="space-y-3 mb-6">
@@ -281,17 +288,18 @@
                             <span class="text-sm text-gray-600">Cameras:</span>
                             <span class="text-sm font-medium text-gray-900 ml-2">${room.camera_count} Active</span>
                         </div>
-                        <div>
-                            <span class="text-sm text-gray-600">Current Occupancy:</span>
-                            <span class="text-sm font-medium text-gray-900 ml-2">${room.current_people_count} people</span>
-                        </div>
                     </div>
 
                     <div class="space-y-2 mb-4">
                         ${room.cameras.map(cam => `
-                            <div class="text-xs text-gray-600 flex items-center">
-                                <span class="w-2 h-2 ${cam.is_active ? 'bg-green-500' : 'bg-gray-400'} rounded-full mr-2"></span>
-                                ${escapeHtml(cam.name)}
+                            <div class="text-xs text-gray-600 flex items-center justify-between">
+                                <div class="flex items-center">
+                                    <span class="w-2 h-2 ${cam.is_active ? 'bg-green-500' : 'bg-gray-400'} rounded-full mr-2"></span>
+                                    ${escapeHtml(cam.name)}
+                                </div>
+                                <span class="camera-people-count text-gray-500 font-medium" data-camera-id="${cam.id}">
+                                    ${cam.current_people_count || 0}
+                                </span>
                             </div>
                         `).join('')}
                     </div>
@@ -300,9 +308,9 @@
                         <a href="/room-designer/${room.id}" target="_blank" class="flex-1 px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors duration-200 text-center">
                             Design Layout
                         </a>
-                        <button onclick="viewRoomDetails(${room.id})" class="flex-1 px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors duration-200">
+                        <a href="/camera-viewer?room_id=${room.id}" target="_blank" class="flex-1 px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors duration-200 text-center">
                             View Details
-                        </button>
+                        </a>
                         <button onclick="deleteRoom(${room.id})" class="px-4 py-2 text-red-500 hover:text-red-700 transition-colors duration-200">
                             Delete
                         </button>
@@ -355,30 +363,19 @@
                     const cameraDiv = document.createElement('div');
                     cameraDiv.className = 'bg-black rounded overflow-hidden relative';
                     
-                    if (camera.error) {
-                        cameraDiv.innerHTML = `
-                            <div class="aspect-video flex items-center justify-center bg-gray-800">
-                                <div class="text-center text-gray-400">
-                                    <p class="font-medium">${escapeHtml(camera.name)}</p>
-                                    <p class="text-sm mt-2">Error: ${escapeHtml(camera.error)}</p>
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        const videoId = `camera-video-${camera.id}`;
-                        cameraDiv.innerHTML = `
-                            <video id="${videoId}" autoplay muted playsinline class="w-full aspect-video bg-black"></video>
-                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                                <p class="text-white font-medium text-sm">${escapeHtml(camera.name)}</p>
-                                <p class="text-white/70 text-xs mt-1" id="${videoId}-status">Connecting...</p>
-                            </div>
-                        `;
-                        
-                        // Initialize WebRTC for this camera
-                        setTimeout(() => initWebRTC(videoId, camera.webrtc_sdp, camera.id, roomId), 100);
-                    }
+                    const videoId = `camera-video-${camera.id}`;
+                    cameraDiv.innerHTML = `
+                        <video id="${videoId}" autoplay muted playsinline class="w-full aspect-video bg-black"></video>
+                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                            <p class="text-white font-medium text-sm">${escapeHtml(camera.name)}</p>
+                            <p class="text-white/70 text-xs mt-1" id="${videoId}-status">Connecting...</p>
+                        </div>
+                    `;
                     
                     cameraGrid.appendChild(cameraDiv);
+                    
+                    // Initialize WebRTC for this camera
+                    setTimeout(() => initWebRTC(videoId, camera.rtsp_url, camera.id), 100);
                 });
                 
             } catch (error) {
@@ -386,22 +383,27 @@
             }
         }
         
-        async function initWebRTC(videoId, serverOfferSdp, cameraId, roomId) {
+        async function initWebRTC(videoId, rtspUrl, cameraId) {
             const video = document.getElementById(videoId);
             const status = document.getElementById(`${videoId}-status`);
             
-            if (!video || !serverOfferSdp) {
-                if (status) status.textContent = 'Failed: No SDP';
+            if (!video || !rtspUrl) {
+                if (status) status.textContent = 'Failed: No RTSP URL';
                 return;
             }
             
             try {
                 if (status) status.textContent = 'Connecting...';
                 
+                // Step 1: Create peer connection
                 const pc = new RTCPeerConnection({
                     iceServers: [{urls: 'stun:stun.l.google.com:19302'}]
                 });
                 
+                // Step 2: Add a transceiver to receive video
+                pc.addTransceiver('video', {'direction': 'recvonly'});
+                
+                // Handle incoming tracks
                 pc.ontrack = (event) => {
                     console.log('Received track for camera', cameraId);
                     video.srcObject = event.streams[0];
@@ -409,6 +411,7 @@
                     if (status) status.textContent = 'Connected';
                 };
                 
+                // Handle connection state changes
                 pc.oniceconnectionstatechange = () => {
                     console.log('ICE state for camera', cameraId, ':', pc.iceConnectionState);
                     if (status) {
@@ -422,52 +425,41 @@
                     }
                 };
                 
-                pc.onicegatheringstatechange = () => {
-                    console.log('ICE gathering state for camera', cameraId, ':', pc.iceGatheringState);
-                };
+                // Step 3: Create offer
+                console.log('Creating offer for camera', cameraId);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
                 
-                pc.onconnectionstatechange = () => {
-                    console.log('Connection state for camera', cameraId, ':', pc.connectionState);
-                };
+                // Step 4: Send offer to RTSPtoWebRTC server via nginx proxy
+                console.log('Sending offer to RTSPtoWebRTC for camera', cameraId);
+                const sdp64 = btoa(offer.sdp);
                 
-                // Step 1: Set remote description with the server's offer
-                console.log('Setting remote description (server offer) for camera', cameraId);
-                const offerSdp = atob(serverOfferSdp);
+                const formData = new FormData();
+                formData.append('url', rtspUrl);
+                formData.append('sdp64', sdp64);
                 
-                await pc.setRemoteDescription(new RTCSessionDescription({
-                    type: 'offer',
-                    sdp: offerSdp
-                }));
-                
-                // Step 2: Create answer
-                console.log('Creating answer for camera', cameraId);
-                const answer = await pc.createAnswer();
-                
-                // Step 3: Set local description with our answer
-                console.log('Setting local description (our answer) for camera', cameraId);
-                await pc.setLocalDescription(answer);
-                
-                // Step 4: Send answer back to server
-                console.log('Sending answer to server for camera', cameraId);
-                const answerSdp64 = btoa(answer.sdp);
-                
-                const response = await fetch(`/vault-rooms/${roomId}/cameras/${cameraId}/webrtc-answer`, {
+                const response = await fetch('https://aqlinks.com/rtsp/stream', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        answer_sdp64: answerSdp64
-                    })
+                    body: formData
                 });
                 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(`Backend returned ${response.status}: ${errorText}`);
+                    throw new Error(`RTSPtoWebRTC returned ${response.status}: ${errorText}`);
                 }
                 
-                console.log('Answer accepted by server for camera', cameraId);
-                if (status) status.textContent = 'Waiting for connection...';
+                const data = await response.json();
+                console.log('Received answer from RTSPtoWebRTC for camera', cameraId, '- tracks:', data.tracks);
+                
+                // Step 5: Set remote description with server's answer
+                const answerSdp = atob(data.sdp64);
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: answerSdp
+                }));
+                
+                console.log('WebRTC connection established for camera', cameraId);
+                if (status) status.textContent = 'Waiting for video...';
                 
             } catch (error) {
                 console.error('WebRTC error for camera', cameraId, ':', error);
@@ -601,8 +593,65 @@
         // Form submission - let it submit naturally to the backend
         // The form will POST to /vault-rooms/create and redirect back to /vault-room
         
+        // Real-time people count updates
+        let peopleCountInterval;
+        
+        async function updatePeopleCounts() {
+            try {
+                const response = await fetch('/vault-rooms/all/people-counts');
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                
+                data.rooms.forEach(room => {
+                    const roomCard = document.querySelector(`[data-room-id="${room.room_id}"]`);
+                    if (!roomCard) return;
+                    
+                    // Update room total count
+                    const roomCountElement = roomCard.querySelector('.room-people-count');
+                    if (roomCountElement) {
+                        const count = room.total_people_count || 0;
+                        roomCountElement.textContent = `${count} ${count === 1 ? 'person' : 'people'}`;
+                        
+                        // Update color based on count
+                        roomCountElement.className = `${count > 0 ? 'bg-blue-500' : 'bg-gray-400'} text-white px-3 py-1 rounded-full text-xs font-bold room-people-count`;
+                    }
+                    
+                    // Update individual camera counts
+                    room.cameras.forEach(camera => {
+                        const cameraCountElement = roomCard.querySelector(`[data-camera-id="${camera.camera_id}"]`);
+                        if (cameraCountElement) {
+                            cameraCountElement.textContent = camera.people_count || 0;
+                        }
+                    });
+                });
+            } catch (error) {
+                console.error('Error updating people counts:', error);
+            }
+        }
+        
+        function startPeopleCountPolling() {
+            // Initial update
+            updatePeopleCounts();
+            
+            // Poll every 2 seconds
+            peopleCountInterval = setInterval(updatePeopleCounts, 2000);
+        }
+        
         // Load vault rooms when page loads
-        window.addEventListener('DOMContentLoaded', loadVaultRooms);
+        window.addEventListener('DOMContentLoaded', () => {
+            loadVaultRooms().then(() => {
+                // Start polling after rooms are loaded
+                startPeopleCountPolling();
+            });
+        });
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (peopleCountInterval) {
+                clearInterval(peopleCountInterval);
+            }
+        });
     </script>
 
     <!-- Camera Viewer Modal -->

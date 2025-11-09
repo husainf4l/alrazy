@@ -65,6 +65,7 @@ class Camera(Base):
     name = Column(String(255), nullable=False)
     rtsp_url = Column(String(500), nullable=False)
     vault_room_id = Column(Integer, ForeignKey("vault_rooms.id"), nullable=False)
+    current_people_count = Column(Integer, default=0)  # People detected by this camera
     position_x = Column(Integer, nullable=True)  # Camera position in room layout
     position_y = Column(Integer, nullable=True)
     field_of_view = Column(Integer, default=90)  # Field of view in degrees
