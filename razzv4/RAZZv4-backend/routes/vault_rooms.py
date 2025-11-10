@@ -431,7 +431,9 @@ async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
         total_count = 0
         if tracking_service and len(camera_ids) > 0:
             people_list = tracking_service.get_people_in_room(camera_ids)
-            total_count = len(people_list)
+            # Count unique people by global ID (same person in multiple cameras = 1 person)
+            unique_global_ids = set(person['track_id'] for person in people_list)
+            total_count = len(unique_global_ids)
         
         return {
             "room_id": room_id,

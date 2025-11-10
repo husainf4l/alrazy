@@ -143,7 +143,7 @@
 
             <!-- Camera Grid -->
             <div class="flex-1 p-8 overflow-y-auto bg-white">
-                <div id="cameraGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 auto-rows-max">
+                <div id="cameraGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 auto-rows-max">
                     <!-- Loading state -->
                     <div class="col-span-full flex items-center justify-center py-16">
                         <div class="text-center animate-fade-in">
@@ -639,8 +639,8 @@
             // Initial fetch
             updatePeopleCounts();
             
-            // Poll every 2 seconds
-            peopleCountInterval = setInterval(updatePeopleCounts, 2000);
+            // Poll every 10 seconds
+            peopleCountInterval = setInterval(updatePeopleCounts, 10000);
         }
         
         async function updatePeopleCounts() {
@@ -703,7 +703,7 @@
                 const data = await response.json();
                 
                 // Update sidebar
-                updatePeopleSidebar(data.people, data.people_count);
+                updatePeopleSidebar(data.people, data.current_people_count);
                 
                 // Group by camera for any future use
                 currentPeopleData = {};
@@ -737,19 +737,29 @@
                 return;
             }
             
-            // Remove duplicates by global_id
-            const uniquePeople = [];
-            const seen = new Set();
+            // Group people by track_id (global ID) and collect their cameras
+            const peopleMap = new Map();
             people.forEach(person => {
-                if (!seen.has(person.global_id)) {
-                    seen.add(person.global_id);
-                    uniquePeople.push(person);
+                if (!peopleMap.has(person.track_id)) {
+                    peopleMap.set(person.track_id, {
+                        ...person,
+                        cameras: [person.camera_id]
+                    });
+                } else {
+                    // Add this camera to the list if not already present
+                    const existing = peopleMap.get(person.track_id);
+                    if (!existing.cameras.includes(person.camera_id)) {
+                        existing.cameras.push(person.camera_id);
+                    }
                 }
             });
             
+            const uniquePeople = Array.from(peopleMap.values());
+            
             peopleList.innerHTML = uniquePeople.map(person => {
-                const displayName = person.name || `Person ${person.global_id}`;
+                const displayName = person.name || `Person ${person.track_id}`;
                 const initial = displayName.charAt(0).toUpperCase();
+                const cameraList = person.cameras.sort((a, b) => a - b).join(', ');
                 
                 return `
                 <div class="person-item group bg-white hover:bg-gray-50 rounded-lg p-3 transition-all duration-200 border border-gray-200 hover:border-gray-300">
@@ -760,14 +770,14 @@
                             </div>
                             <div class="flex-1">
                                 <div class="flex items-center space-x-2">
-                                    <span class="font-normal text-gray-900 person-name tracking-tight text-sm" data-id="${person.global_id}">${displayName}</span>
-                                    <button onclick="enableEditName(${person.global_id}, '${displayName}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity duration-200">
+                                    <span class="font-normal text-gray-900 person-name tracking-tight text-sm" data-id="${person.track_id}">${displayName}</span>
+                                    <button onclick="enableEditName('${person.track_id}', '${displayName}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity duration-200">
                                         <svg class="w-3.5 h-3.5 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                                         </svg>
                                     </button>
                                 </div>
-                                <p class="text-xs text-gray-500 mt-0.5 font-light">ID: ${person.global_id} • Camera ${person.camera_id}</p>
+                                <p class="text-xs text-gray-500 mt-0.5 font-light">ID: ${person.track_id} • Camera${person.cameras.length > 1 ? 's' : ''} ${cameraList}</p>
                             </div>
                         </div>
                     </div>
@@ -1003,7 +1013,7 @@
             
             // Resume updates when modal is closed
             if (!peopleUpdateInterval) {
-                peopleUpdateInterval = setInterval(updatePeopleData, 3000); // 3 seconds refresh
+                peopleUpdateInterval = setInterval(updatePeopleData, 10000); // 10 seconds refresh
             }
         }
 
@@ -1047,7 +1057,7 @@
         // Start updates with slower refresh rate
         let peopleUpdateInterval;
         updatePeopleData();
-        peopleUpdateInterval = setInterval(updatePeopleData, 3000); // 3 seconds refresh
+        peopleUpdateInterval = setInterval(updatePeopleData, 10000); // 10 seconds refresh
     </script>
 </body>
 </html>
