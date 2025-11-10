@@ -100,3 +100,6 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+# YOLO model files (too large for GitHub)
+*.pt
+yolo*.pt
