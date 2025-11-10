@@ -93,8 +93,8 @@ app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(vault_rooms_router)
 
-# Mount static files (you can create this folder later if needed)
-# app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files for CSS/JS
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # MJPEG Streaming Endpoint - Real-time with tracking visualization!

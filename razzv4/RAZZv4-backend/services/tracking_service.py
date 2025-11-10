@@ -1,6 +1,8 @@
 """
 People Detection and Tracking Service using YOLO11 + ByteTrack
 Following clean architecture principles with centralized configuration
+WITH ZONE-AWARE TRACKING for accurate per-room counting
+WITH GLOBAL CROSS-CAMERA RE-IDENTIFICATION using face recognition
 """
 
 import cv2
@@ -11,16 +13,21 @@ from typing import Dict, List, Tuple, Optional
 import supervision as sv
 from logging_config import get_logger
 from config import get_settings
+from services.zone_utils import zone_manager
+from services.global_person_tracker import get_global_person_tracker
+from services.face_recognition_service import get_face_recognition_service
+from services.osnet_reid_service import get_osnet_service
+from services.faiss_index_service import get_faiss_service
 
 logger = get_logger(__name__)
 settings = get_settings()
 
 
 class TrackingService:
-    """ByteTrack (30 FPS) with spatial-based global cross-camera tracking"""
+    """ByteTrack (30 FPS) with face-based global cross-camera tracking + Zone awareness"""
     
     def __init__(self, conf_threshold: float = None, bytetrack_threshold: float = None):
-        logger.info("Initializing tracking service with clean architecture...")
+        logger.info("Initializing zone-aware + face-based cross-camera tracking service...")
         
         # Use centralized config or fallback to defaults
         self.conf_threshold = conf_threshold or settings.YOLO_CONFIDENCE
@@ -34,7 +41,7 @@ class TrackingService:
             'last_update': None, 'last_frame': None, 'frame_count': 0
         })
         
-        # Global tracking for cross-camera (spatial-based)
+        # Global tracking (LEGACY - kept for backward compatibility, but use global_tracker now)
         self.global_person_id = 0
         self.global_id_map = {}  # {f"{camera_id}_{local_track_id}": global_id}
         self.global_positions = {}  # {global_id: (x, y, width, height)}
@@ -42,7 +49,26 @@ class TrackingService:
         self.person_names = {}  # {global_id: name}
         self.global_id_timeout = settings.GLOBAL_ID_TIMEOUT
         
-        logger.info(f"✅ Tracking service initialized (conf={self.conf_threshold}, timeout={self.global_id_timeout}s)")
+        # NEW: Global person tracker with OSNet Re-ID
+        self.global_tracker = get_global_person_tracker()
+        self.face_service = get_face_recognition_service()  # Keep for backward compatibility
+        self.osnet_service = get_osnet_service()
+        self.faiss_service = get_faiss_service()
+        self.use_reid = self.osnet_service.is_available()
+        
+        # Track history for stable track detection (need 3-7 consecutive frames before extracting embedding)
+        self.track_history = defaultdict(lambda: {'consecutive_frames': 0, 'has_embedding': False})
+        self.stable_track_threshold = 3  # Minimum frames before extraction
+        
+        # Zone tracking
+        self.zone_manager = zone_manager
+        self.room_zones_loaded = set()  # Track which rooms have loaded zones
+        
+        if self.use_reid:
+            logger.info(f"✅ Zone + OSNet Re-ID tracking service initialized (conf={self.conf_threshold}, timeout={self.global_id_timeout}s)")
+        else:
+            logger.warning(f"⚠️  OSNet Re-ID not available - using spatial matching only")
+            logger.info(f"✅ Zone-aware tracking service initialized (conf={self.conf_threshold}, timeout={self.global_id_timeout}s)")
     
     def _detect_device(self) -> str:
         try:
@@ -118,6 +144,12 @@ class TrackingService:
         self.camera_tracks[camera_id]['count'] = len(confident_tracks)
         self.camera_tracks[camera_id]['last_update'] = datetime.now()
         self.camera_tracks[camera_id]['last_frame'] = frame  # Store frame for visualization
+        
+        # Clean up track history for lost tracks
+        current_track_keys = {f"{camera_id}_{track_id}" for track_id in confident_tracks.keys()}
+        lost_track_keys = [key for key in self.track_history.keys() if key.startswith(f"{camera_id}_") and key not in current_track_keys]
+        for lost_key in lost_track_keys:
+            del self.track_history[lost_key]
         
         # Assign global IDs to tracks
         self._assign_global_ids(camera_id, confident_tracks)
@@ -316,71 +348,65 @@ class TrackingService:
     
     def _assign_global_ids(self, camera_id: int, tracks: Dict):
         """
-        Assign global IDs to tracks using spatial matching across cameras
-        Since cameras view the same space, we use position and size to match people
+        Assign global IDs to tracks using OSNet Re-ID + spatial matching
+        NEW: Uses OSNet for full-body Re-ID with stable track detection (3-7 frames)
         """
-        current_time = datetime.now()
+        frame = self.camera_tracks[camera_id].get('last_frame')
         
-        # Clean up expired global IDs
-        expired_ids = []
-        for global_id, last_seen in self.global_last_seen.items():
-            if (current_time - last_seen).total_seconds() > self.global_id_timeout:
-                expired_ids.append(global_id)
-        
-        for global_id in expired_ids:
-            self.global_positions.pop(global_id, None)
-            self.global_last_seen.pop(global_id, None)
-            keys_to_remove = [k for k, v in self.global_id_map.items() if v == global_id]
-            for k in keys_to_remove:
-                self.global_id_map.pop(k, None)
+        if frame is None:
+            logger.warning(f"No frame available for camera {camera_id}")
+            return
         
         # Process each track
         for track_id, track_data in tracks.items():
             local_track_key = f"{camera_id}_{track_id}"
             bbox = track_data.get('bbox')
             
-            # If already has global ID, just update
-            if local_track_key in self.global_id_map:
-                global_id = self.global_id_map[local_track_key]
-                self.global_last_seen[global_id] = current_time
-                self.global_positions[global_id] = bbox
+            if bbox is None:
                 continue
             
-            # Try to match with existing global IDs from OTHER cameras using spatial overlap
-            best_match_id = None
-            best_iou = 0.0
+            # Track stability: Count consecutive frames for this track
+            self.track_history[local_track_key]['consecutive_frames'] += 1
+            consecutive_frames = self.track_history[local_track_key]['consecutive_frames']
+            has_embedding = self.track_history[local_track_key]['has_embedding']
             
-            if len(self.global_positions) > 0:
-                for global_id, global_bbox in self.global_positions.items():
-                    # Skip if this global ID is from the same camera
-                    existing_keys = [k for k, v in self.global_id_map.items() if v == global_id]
-                    same_camera = any(k.startswith(f"{camera_id}_") for k in existing_keys)
-                    
-                    if same_camera:
-                        continue
-                    
-                    # Calculate IoU (Intersection over Union)
-                    iou = self._calculate_iou(bbox, global_bbox)
-                    
-                    # Use IoU threshold of 0.3 for spatial matching
-                    if iou > best_iou and iou > 0.3:
-                        best_iou = iou
-                        best_match_id = global_id
+            # Extract OSNet embedding only for stable tracks (3+ frames)
+            reid_embedding = None
+            reid_quality = 0.0
             
-            if best_match_id is not None:
-                # Match found - assign existing global ID
-                self.global_id_map[local_track_key] = best_match_id
-                self.global_last_seen[best_match_id] = current_time
-                self.global_positions[best_match_id] = bbox
-                logger.info(f"✅ Matched Cam{camera_id} Track{track_id} → Global ID {best_match_id} (IoU={best_iou:.3f})")
-            else:
-                # No match - create new global ID
-                self.global_person_id += 1
-                new_global_id = self.global_person_id
-                self.global_id_map[local_track_key] = new_global_id
-                self.global_last_seen[new_global_id] = current_time
-                self.global_positions[new_global_id] = bbox
-                logger.info(f"🆕 New Global ID {new_global_id} for Cam{camera_id} Track{track_id}")
+            if self.use_reid and consecutive_frames >= self.stable_track_threshold and not has_embedding:
+                try:
+                    # Extract full-body embedding using OSNet
+                    reid_embedding = self.osnet_service.extract_embedding(frame, tuple(bbox))
+                    
+                    if reid_embedding is not None:
+                        # Calculate quality based on bbox size (larger = better quality)
+                        bbox_width = bbox[2] - bbox[0]
+                        bbox_height = bbox[3] - bbox[1]
+                        bbox_area = bbox_width * bbox_height
+                        reid_quality = min(1.0, bbox_area / (frame.shape[0] * frame.shape[1]))
+                        
+                        self.track_history[local_track_key]['has_embedding'] = True
+                        logger.debug(f"Cam{camera_id} Track{track_id}: OSNet embedding extracted (frames={consecutive_frames}, quality={reid_quality:.2f})")
+                    else:
+                        logger.debug(f"Cam{camera_id} Track{track_id}: OSNet embedding failed")
+                except Exception as e:
+                    logger.debug(f"OSNet extraction error for Cam{camera_id} Track{track_id}: {e}")
+            
+            # Get or create global ID using the global tracker
+            global_id = self.global_tracker.match_or_create_person(
+                camera_id=camera_id,
+                local_track_id=track_id,
+                face_embedding=reid_embedding,  # Using face_embedding param for Reid embedding (backward compatibility)
+                face_quality=reid_quality,
+                bbox=tuple(bbox)
+            )
+            
+            # Update legacy global_id_map for backward compatibility
+            self.global_id_map[local_track_key] = global_id
+            
+            # Store global ID in track data for easy access
+            track_data['global_id'] = global_id
     
     def _calculate_iou(self, bbox1: List[float], bbox2: List[float]) -> float:
         """Calculate Intersection over Union between two bounding boxes"""
@@ -438,5 +464,69 @@ class TrackingService:
     
     def get_person_name(self, global_id: int) -> Optional[str]:
         """Get the name of a person by their global ID"""
+        # Check new global tracker first
+        person = self.global_tracker.get_person(global_id)
+        if person and person.name:
+            return person.name
+        # Fallback to legacy
         return self.person_names.get(global_id)
+    
+    def set_person_name(self, global_id: int, name: str):
+        """Set the name of a person by their global ID"""
+        # Update in new global tracker
+        self.global_tracker.update_person_name(global_id, name)
+        # Also update legacy for backward compatibility
+        self.person_names[global_id] = name
+        logger.info(f"Updated name for Global ID {global_id}: {name}")
+    
+    def get_global_person_stats(self) -> Dict:
+        """Get statistics about global person tracking"""
+        return self.global_tracker.get_statistics()
+    
+    def load_room_zones(self, room_id: int, room_layout_json: str):
+        """
+        Load zones for a room from the room layout JSON
+        
+        Args:
+            room_id: Room identifier
+            room_layout_json: JSON string from database
+        """
+        if room_id in self.room_zones_loaded:
+            logger.debug(f"Zones already loaded for room {room_id}")
+            return
+        
+        try:
+            zone_data = self.zone_manager.load_zones_from_layout(room_id, room_layout_json)
+            self.room_zones_loaded.add(room_id)
+            logger.info(f"✅ Loaded {len(zone_data['zones'])} zones for room {room_id}")
+        except Exception as e:
+            logger.error(f"Failed to load zones for room {room_id}: {e}")
+    
+    def get_zone_statistics(self, room_id: int) -> Dict:
+        """
+        Get zone-based statistics for a room
+        
+        Args:
+            room_id: Room identifier
+            
+        Returns:
+            Dictionary with zone statistics including people counts per zone
+        """
+        # Collect all tracked people with their positions
+        tracked_people = []
+        
+        for global_id, pos in self.global_positions.items():
+            # pos is (x, y, width, height) in world coordinates
+            tracked_people.append({
+                'global_id': global_id,
+                'x': pos[0],
+                'y': pos[1],
+                'name': self.person_names.get(global_id)
+            })
+        
+        # Get statistics from zone manager
+        stats = self.zone_manager.get_zone_statistics(room_id, tracked_people)
+        
+        return stats
+
 

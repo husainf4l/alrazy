@@ -102,6 +102,19 @@
                 <p id="peopleCount" class="text-sm text-gray-600 mt-1 font-normal">0 people detected</p>
             </div>
             
+            <!-- Zone Statistics Section -->
+            <div class="bg-white border-b border-gray-200 px-6 py-4" id="zoneStatsSection" style="display: none;">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-medium text-gray-900">Zone Statistics</h3>
+                    <button onclick="toggleZoneStats()" class="text-xs text-gray-500 hover:text-gray-700">
+                        <span id="zoneToggleText">Hide</span>
+                    </button>
+                </div>
+                <div id="zoneStatsList" class="space-y-2">
+                    <!-- Zone stats will be populated here -->
+                </div>
+            </div>
+
             <!-- People List -->
             <div class="flex-1 overflow-y-auto p-4 space-y-2" id="peopleList">
                 <div class="text-center py-12 text-gray-400">
@@ -1054,10 +1067,128 @@
             }
         }
 
+        // Zone statistics management
+        let zoneStatsVisible = true;
+        let zoneStatsInterval;
+
+        function toggleZoneStats() {
+            zoneStatsVisible = !zoneStatsVisible;
+            const zoneList = document.getElementById('zoneStatsList');
+            const toggleText = document.getElementById('zoneToggleText');
+            
+            if (zoneStatsVisible) {
+                zoneList.style.display = 'block';
+                toggleText.textContent = 'Hide';
+            } else {
+                zoneList.style.display = 'none';
+                toggleText.textContent = 'Show';
+            }
+        }
+
+        async function updateZoneStatistics() {
+            try {
+                const response = await fetch(`/vault-rooms/${roomId}/zone-statistics`);
+                if (!response.ok) {
+                    // Hide zone section if not available
+                    document.getElementById('zoneStatsSection').style.display = 'none';
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                // Show zone section if we have zones
+                if (data.zones && Object.keys(data.zones).length > 0) {
+                    document.getElementById('zoneStatsSection').style.display = 'block';
+                    displayZoneStatistics(data);
+                } else {
+                    document.getElementById('zoneStatsSection').style.display = 'none';
+                }
+            } catch (error) {
+                console.debug('Zone statistics not available:', error);
+                document.getElementById('zoneStatsSection').style.display = 'none';
+            }
+        }
+
+        function displayZoneStatistics(data) {
+            const zoneList = document.getElementById('zoneStatsList');
+            if (!zoneList) return;
+
+            // Create zone cards
+            const zoneCards = Object.entries(data.zones).map(([zoneName, zoneData]) => {
+                const peopleCount = zoneData.people_count || 0;
+                const isOverlap = zoneData.is_overlap || false;
+                const cameraNames = zoneData.camera_names || [];
+                
+                // Color based on zone type
+                const bgColor = isOverlap ? 'bg-purple-50' : 'bg-blue-50';
+                const borderColor = isOverlap ? 'border-purple-200' : 'border-blue-200';
+                const textColor = isOverlap ? 'text-purple-700' : 'text-blue-700';
+                const iconColor = isOverlap ? 'text-purple-600' : 'text-blue-600';
+                
+                return `
+                    <div class="p-3 rounded-lg border ${borderColor} ${bgColor}">
+                        <div class="flex items-start justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                                </svg>
+                                <span class="text-sm font-medium ${textColor}">${escapeHtml(zoneName)}</span>
+                            </div>
+                            ${isOverlap ? `<span class="text-xs ${textColor} bg-purple-100 px-2 py-0.5 rounded-full">Overlap</span>` : ''}
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-1.5">
+                                <svg class="w-4 h-4 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                                </svg>
+                                <span class="text-lg font-bold ${textColor}">${peopleCount}</span>
+                            </div>
+                            ${cameraNames.length > 0 ? `
+                                <div class="text-xs text-gray-500">
+                                    <span class="font-medium">Cameras:</span> ${cameraNames.join(', ')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add total count card
+            const totalCard = `
+                <div class="p-3 rounded-lg border border-gray-300 bg-gray-50">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-gray-900">Total in Room</span>
+                        </div>
+                        <span class="text-lg font-bold text-gray-900">${data.total_people || 0}</span>
+                    </div>
+                    <div class="mt-1 text-xs text-gray-500">
+                        ${Object.keys(data.zones).length} zone${Object.keys(data.zones).length !== 1 ? 's' : ''} monitored
+                    </div>
+                </div>
+            `;
+
+            zoneList.innerHTML = totalCard + zoneCards;
+        }
+
         // Start updates with slower refresh rate
         let peopleUpdateInterval;
         updatePeopleData();
         peopleUpdateInterval = setInterval(updatePeopleData, 10000); // 10 seconds refresh
+
+        // Start zone statistics updates
+        updateZoneStatistics();
+        zoneStatsInterval = setInterval(updateZoneStatistics, 5000); // 5 seconds refresh
+
+        // Clean up zone stats interval on unload
+        window.addEventListener('beforeunload', () => {
+            if (zoneStatsInterval) {
+                clearInterval(zoneStatsInterval);
+            }
+        });
     </script>
 </body>
 </html>

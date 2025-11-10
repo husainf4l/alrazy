@@ -136,3 +136,49 @@ class TrackingEvent(Base):
     room = relationship("VaultRoom", backref="tracking_events")
     camera = relationship("Camera", backref="tracking_events")
     person = relationship("Person", back_populates="tracking_events")
+
+
+class DetectedPerson(Base):
+    """
+    Detected persons tracked across cameras in real-time
+    Stores face embeddings and physical dimensions for cross-camera matching
+    """
+    __tablename__ = "detected_persons"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    global_id = Column(Integer, unique=True, nullable=False, index=True)  # Global tracking ID
+    person_id = Column(Integer, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True, index=True)  # Link to enrolled person
+    
+    # Name assignment
+    assigned_name = Column(String(255), nullable=True)  # Manually assigned name
+    
+    # Face data
+    face_embedding = Column(Vector(512), nullable=True)  # Best face embedding
+    face_quality = Column(Float, default=0.0)  # Best face quality score
+    
+    # Physical dimensions (for spatial matching)
+    avg_height_pixels = Column(Float, nullable=True)  # Average height in pixels
+    avg_width_pixels = Column(Float, nullable=True)   # Average width in pixels
+    avg_height_meters = Column(Float, nullable=True)  # Estimated height in meters
+    
+    # Tracking metadata
+    first_seen = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    last_seen = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True)
+    total_appearances = Column(Integer, default=1)
+    cameras_visited = Column(JSON, default=list)  # List of camera IDs
+    
+    # Current state
+    is_active = Column(Boolean, default=True)  # Currently being tracked
+    current_room_id = Column(Integer, ForeignKey("vault_rooms.id"), nullable=True)
+    current_positions = Column(JSON, default=dict)  # {camera_id: {bbox, timestamp}}
+    
+    # Statistics
+    total_detections = Column(Integer, default=0)
+    quality_scores = Column(JSON, default=list)  # Historical quality scores
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    person = relationship("Person", backref="detected_instances")
+    current_room = relationship("VaultRoom", backref="current_detected_persons")

@@ -52,7 +52,29 @@ class CameraProcessor:
         self.deepsort_interval = 1.0 / 2  # 2 FPS for DeepSORT ReID
         self.last_detections = None  # Cache last YOLO detections for ByteTrack interpolation
         
+        # Camera position in room (world coordinates) - loaded from database
+        self.camera_position = None  # (x, y) in meters
+        self.room_id = None
+        self._load_camera_position()
+        
         logger.info(f"CameraProcessor initialized for camera {camera_id} with tracking={'enabled' if use_tracking else 'disabled'}")
+    
+    def _load_camera_position(self):
+        """Load camera position from database"""
+        db = self.db_session_factory()
+        try:
+            camera = db.query(Camera).filter(Camera.id == self.camera_id).first()
+            if camera:
+                self.room_id = camera.vault_room_id
+                if camera.position_x is not None and camera.position_y is not None:
+                    self.camera_position = (camera.position_x, camera.position_y)
+                    logger.info(f"Camera {self.camera_id} position: {self.camera_position} in room {self.room_id}")
+                else:
+                    logger.warning(f"Camera {self.camera_id} has no position set")
+        except Exception as e:
+            logger.error(f"Failed to load camera position: {e}")
+        finally:
+            db.close()
         
     def start(self):
         """Start processing this camera in a background thread"""
@@ -266,8 +288,24 @@ class CameraService:
             cameras = db.query(Camera).filter(Camera.is_active == True).all()
             logger.info(f"Starting {len(cameras)} active cameras")
             
+            # Load zones for each room with cameras
+            rooms_loaded = set()
+            for camera in cameras:
+                if camera.vault_room_id and camera.vault_room_id not in rooms_loaded:
+                    # Load room zones from database
+                    room = db.query(VaultRoom).filter(VaultRoom.id == camera.vault_room_id).first()
+                    if room and room.room_layout:
+                        try:
+                            self.tracking_service.load_room_zones(room.id, room.room_layout)
+                            logger.info(f"✅ Loaded zones for room {room.id} ({room.name})")
+                            rooms_loaded.add(room.id)
+                        except Exception as e:
+                            logger.error(f"Failed to load zones for room {room.id}: {e}")
+            
+            # Start camera processors
             for camera in cameras:
                 self.start_camera(camera.id, camera.rtsp_url)
+                
         finally:
             db.close()
     
@@ -293,3 +331,40 @@ class CameraService:
             "last_person_count": 0,
             "last_update": None
         }
+    
+    def get_room_zone_statistics(self, room_id: int) -> dict:
+        """
+        Get zone-based statistics for a room
+        
+        Args:
+            room_id: Room identifier
+            
+        Returns:
+            Dictionary with zone statistics including people counts per zone
+        """
+        try:
+            zone_stats = self.tracking_service.get_zone_statistics(room_id)
+            
+            # Calculate total people in room (avoiding double counting in overlaps)
+            total_people = len(set(
+                person_id 
+                for zone_data in zone_stats.values() 
+                for person_id in zone_data.get('people_ids', [])
+            ))
+            
+            return {
+                'room_id': room_id,
+                'total_people': total_people,
+                'zones': zone_stats,
+                'timestamp': datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error getting zone statistics for room {room_id}: {e}")
+            return {
+                'room_id': room_id,
+                'total_people': 0,
+                'zones': {},
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+

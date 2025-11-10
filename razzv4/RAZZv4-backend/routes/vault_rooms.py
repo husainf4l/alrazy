@@ -529,11 +529,87 @@ async def get_room_tracking_stats(room_id: int, db: Session = Depends(get_db)):
             "cameras": camera_stats
         }
     
+    except Exception as e:
+        logger.error(f"Error getting tracking stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{room_id}/zone-statistics")
+async def get_room_zone_statistics(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get zone-based statistics for a vault room
+    Shows people count per zone, overlaps, and room total
+    """
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import here to avoid circular dependency
+        from main import camera_service
+        
+        if not camera_service:
+            return {
+                "room_id": room_id,
+                "room_name": vault_room.name,
+                "total_people": 0,
+                "zones": {},
+                "error": "Camera service not available"
+            }
+        
+        # Get zone statistics
+        zone_stats = camera_service.get_room_zone_statistics(room_id)
+        zone_stats["room_name"] = vault_room.name
+        
+        return zone_stats
+    
+    except Exception as e:
+        logger.error(f"Error getting zone statistics for room {room_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
     except HTTPException:
         raise
     except Exception as e:
         print(f"ERROR: Failed to get tracking stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting tracking stats: {str(e)}")
+
+
+@router.get("/{room_id}/global-person-stats")
+async def get_global_person_stats(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get global cross-camera person tracking statistics
+    Shows total persons seen, active persons, face recognition stats
+    """
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import here to avoid circular dependency
+        from main import camera_service
+        
+        if not camera_service or not camera_service.tracking_service:
+            return {
+                "room_id": room_id,
+                "room_name": vault_room.name,
+                "error": "Tracking service not available"
+            }
+        
+        # Get global person statistics
+        global_stats = camera_service.tracking_service.get_global_person_stats()
+        
+        return {
+            "room_id": room_id,
+            "room_name": vault_room.name,
+            "global_tracking": global_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting global person stats for room {room_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{room_id}/camera/{camera_id}/tracking-frame")
@@ -655,6 +731,90 @@ async def rename_person(
     except Exception as e:
         logger.error(f"Error renaming person: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error renaming person: {str(e)}")
+
+
+@router.get("/{room_id}/cameras")
+async def get_room_cameras(room_id: int, db: Session = Depends(get_db)):
+    """Get all cameras for a specific room"""
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        cameras = db.query(Camera).filter(Camera.vault_room_id == room_id).all()
+        
+        cameras_data = [
+            {
+                "id": camera.id,
+                "name": camera.name,
+                "rtsp_url": camera.rtsp_url,
+                "position_x": camera.position_x,
+                "position_y": camera.position_y,
+                "field_of_view": camera.field_of_view,
+                "direction": camera.direction,
+                "is_active": camera.is_active
+            } for camera in cameras
+        ]
+        
+        return {
+            "room_id": room_id,
+            "cameras": cameras_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching room cameras: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching cameras: {str(e)}")
+
+
+@router.post("/{room_id}/cameras/{camera_id}/position")
+async def update_camera_position(
+    room_id: int,
+    camera_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Update camera position and orientation in room layout"""
+    try:
+        data = await request.json()
+        
+        camera = db.query(Camera).filter(
+            Camera.id == camera_id,
+            Camera.vault_room_id == room_id
+        ).first()
+        
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found in this room")
+        
+        # Update camera position
+        if 'position_x' in data:
+            camera.position_x = int(data['position_x'])
+        if 'position_y' in data:
+            camera.position_y = int(data['position_y'])
+        if 'direction' in data:
+            camera.direction = int(data['direction'])
+        if 'field_of_view' in data:
+            camera.field_of_view = int(data['field_of_view'])
+        
+        db.commit()
+        
+        logger.info(f"Updated camera {camera_id} position in room {room_id}")
+        
+        return {
+            "success": True,
+            "camera_id": camera_id,
+            "position_x": camera.position_x,
+            "position_y": camera.position_y,
+            "direction": camera.direction,
+            "field_of_view": camera.field_of_view
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating camera position: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating camera position: {str(e)}")
 
 
 @router.post("/{room_id}/cameras/{camera_id}/register-webrtc")

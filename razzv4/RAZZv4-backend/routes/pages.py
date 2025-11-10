@@ -49,7 +49,7 @@ async def test_camera(request: Request):
 
 @router.get("/room-designer/{room_id}")
 async def room_designer_page(request: Request, room_id: int):
-    return templates.TemplateResponse("room-designer.html", {"request": request, "room_id": room_id})
+    return templates.TemplateResponse("room-designer-modular.html", {"request": request, "room_id": room_id})
 
 @router.get("/camera-viewer")
 async def camera_viewer_page(request: Request):
