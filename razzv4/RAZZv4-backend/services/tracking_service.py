@@ -56,9 +56,9 @@ class TrackingService:
         self.faiss_service = get_faiss_service()
         self.use_reid = self.osnet_service.is_available()
         
-        # Track history for stable track detection (need 3-7 consecutive frames before extracting embedding)
+        # Track history for stable track detection (need consecutive frames before extracting embedding)
         self.track_history = defaultdict(lambda: {'consecutive_frames': 0, 'has_embedding': False})
-        self.stable_track_threshold = 3  # Minimum frames before extraction
+        self.stable_track_threshold = 1  # Extract embedding immediately (spatial matching prevents duplicates)
         
         # Zone tracking
         self.zone_manager = zone_manager

@@ -147,13 +147,19 @@ class GlobalPersonTracker:
                                bbox: Optional[Tuple[int, int, int, int]] = None) -> int:
         """
         Match person to existing global ID or create new one
-        Uses both face recognition AND spatial matching for overlapping camera views
+        Uses SPATIAL FIRST (immediate), then Re-ID (after 3+ frames)
+        
+        Matching Priority:
+        1. Check if track already mapped (return existing ID)
+        2. Try spatial matching FIRST (works from frame 1, even without embedding)
+        3. Try Re-ID matching (requires embedding, more accurate)
+        4. Create new person
         
         Args:
             camera_id: Source camera ID
             local_track_id: Local tracking ID from this camera
-            face_embedding: 512-dim face embedding (if available)
-            face_quality: Face detection quality score
+            face_embedding: 512-dim Re-ID embedding (if available after 3+ frames)
+            face_quality: Embedding quality score
             bbox: Person bounding box (for spatial reasoning)
         
         Returns:
@@ -165,26 +171,27 @@ class GlobalPersonTracker:
             if key in self.camera_track_to_global:
                 global_id = self.camera_track_to_global[key]
                 
-                # Update existing person
+                # Update existing person (may now have embedding)
                 if global_id in self.persons:
                     person = self.persons[global_id]
-                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
-                    return global_id
-            
-            # PRIORITY 1: Try face matching (most reliable)
-            if face_embedding is not None:
-                face_match = self._find_best_face_match(face_embedding, camera_id)
-                
-                if face_match:
-                    global_id = face_match
-                    person = self.persons[global_id]
-                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
-                    self.camera_track_to_global[key] = global_id
                     
-                    logger.info(f"✅ Face match: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
+                    # If we now have an embedding, update it and add to FAISS
+                    if face_embedding is not None and person.face_embedding is None:
+                        person.face_embedding = face_embedding.copy()
+                        person.best_face_quality = face_quality
+                        person.best_face_embedding = face_embedding.copy()
+                        
+                        # Add to FAISS for future fast matching
+                        from services.faiss_index_service import get_faiss_service
+                        faiss = get_faiss_service()
+                        if faiss.is_available():
+                            faiss.add_embedding(global_id, face_embedding)
+                            logger.debug(f"📊 Added embedding to FAISS for Global ID {global_id}")
+                    
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
                     return global_id
             
-            # PRIORITY 2: Try spatial matching (for same-view cameras or when face not visible)
+            # PRIORITY 1: Try SPATIAL matching FIRST (works from frame 1, instant cross-camera matching)
             if bbox is not None:
                 spatial_match = self._find_best_spatial_match(bbox, camera_id)
                 
@@ -197,6 +204,19 @@ class GlobalPersonTracker:
                     logger.info(f"✅ Spatial match: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
                     return global_id
             
+            # PRIORITY 2: Try Re-ID matching (more accurate, requires 3+ frames for embedding)
+            if face_embedding is not None:
+                face_match = self._find_best_face_match(face_embedding, camera_id)
+                
+                if face_match:
+                    global_id = face_match
+                    person = self.persons[global_id]
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
+                    self.camera_track_to_global[key] = global_id
+                    
+                    logger.info(f"✅ Re-ID match: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
+                    return global_id
+            
             # No match found - create new person
             global_id = self._create_new_person(camera_id, local_track_id, face_embedding, face_quality, bbox)
             logger.info(f"🆕 New person: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
@@ -204,11 +224,11 @@ class GlobalPersonTracker:
     
     def _find_best_face_match(self, query_embedding: np.ndarray, camera_id: int) -> Optional[int]:
         """
-        Find best matching person by face similarity
-        Checks both in-memory cache AND database for cross-camera sharing
+        Find best matching person by Re-ID embedding similarity
+        Uses FAISS for fast search, falls back to database if needed
         
         Args:
-            query_embedding: Face embedding to match
+            query_embedding: Re-ID embedding to match
             camera_id: Source camera (for spatial filtering)
         
         Returns:
@@ -217,36 +237,45 @@ class GlobalPersonTracker:
         best_match_id = None
         best_similarity = self.face_similarity_threshold
         
-        # First check in-memory persons
+        # Build embeddings dict for FAISS fallback
+        embeddings_dict = {}
         for global_id, person in self.persons.items():
-            # Only match active persons
             if not person.is_active(self.person_timeout):
                 continue
-            
-            # Skip if person has no face embedding
-            if person.face_embedding is None:
-                continue
-            
-            # Calculate cosine similarity
-            similarity = float(np.dot(query_embedding, person.face_embedding))
-            
-            # Boost similarity if person was recently seen on nearby camera
-            # (temporal-spatial consistency)
-            if camera_id in person.cameras_visited:
-                time_since_seen = time.time() - person.last_seen
-                if time_since_seen < 5.0:  # Recently seen on this camera
-                    similarity *= 1.1  # 10% boost
-            
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match_id = global_id
+            if person.face_embedding is not None:
+                embeddings_dict[global_id] = person.face_embedding
+        
+        # Use FAISS search with fallback to brute-force
+        matches = self.faiss_service.search_with_fallback(
+            query_embedding=query_embedding,
+            embeddings_dict=embeddings_dict,
+            k=5,
+            threshold=self.face_similarity_threshold
+        )
+        
+        if matches:
+            for global_id, similarity in matches:
+                person = self.persons.get(global_id)
+                if person is None:
+                    continue
+                
+                # Boost similarity if person was recently seen on nearby camera
+                # (temporal-spatial consistency)
+                if camera_id in person.cameras_visited:
+                    time_since_seen = time.time() - person.last_seen
+                    if time_since_seen < 5.0:  # Recently seen on this camera
+                        similarity *= 1.1  # 10% boost
+                
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match_id = global_id
         
         # If no match in memory, check database (for cross-camera sharing)
         if best_match_id is None:
             try:
                 db = SessionLocal()
                 try:
-                    # Query database for persons with face embeddings
+                    # Query database for persons with Re-ID embeddings
                     # Use vector similarity search (pgvector)
                     from sqlalchemy import text
                     
@@ -304,6 +333,8 @@ class GlobalPersonTracker:
         When two cameras view the same space, the same person appears in similar positions.
         We use IoU (Intersection over Union) to match bounding boxes.
         
+        This is the PRIMARY matching method for first 3 frames (before Re-ID embedding available)
+        
         Args:
             bbox: Person bounding box [x1, y1, x2, y2]
             camera_id: Source camera ID
@@ -312,7 +343,7 @@ class GlobalPersonTracker:
             global_id of best match, or None
         """
         best_match_id = None
-        best_iou = 0.3  # Minimum IoU threshold for spatial match
+        best_iou = 0.25  # Reduced threshold for more lenient matching (was 0.3)
         
         current_time = time.time()
         
@@ -329,9 +360,10 @@ class GlobalPersonTracker:
             if not person.camera_positions:
                 continue
             
-            # Only match if recently seen (within 2 seconds - simultaneous view)
+            # Extended time window for spatial matching (3 seconds instead of 2)
+            # Allows for slight delays in camera processing
             time_since_seen = current_time - person.last_seen
-            if time_since_seen > 2.0:
+            if time_since_seen > 3.0:
                 continue
             
             # Compare with all camera positions this person is currently in
@@ -407,6 +439,10 @@ class GlobalPersonTracker:
         
         self.persons[global_id] = person
         self.camera_track_to_global[(camera_id, local_track_id)] = global_id
+        
+        # Add embedding to FAISS index for fast future searches
+        if face_embedding is not None and self.faiss_service.is_available():
+            self.faiss_service.add_embedding(global_id, face_embedding)
         
         return global_id
     
@@ -516,12 +552,19 @@ class GlobalPersonTracker:
                 
                 for dp in active_persons:
                     # Convert database model to in-memory GlobalPerson
+                    face_emb = None
+                    if dp.face_embedding is not None:
+                        try:
+                            face_emb = np.array(dp.face_embedding)
+                        except:
+                            pass
+                    
                     person = GlobalPerson(
                         global_id=dp.global_id,
-                        face_embedding=np.array(dp.face_embedding) if dp.face_embedding else None,
+                        face_embedding=face_emb,
                         name=dp.assigned_name,
                         best_face_quality=dp.face_quality or 0.0,
-                        best_face_embedding=np.array(dp.face_embedding) if dp.face_embedding else None
+                        best_face_embedding=face_emb
                     )
                     
                     person.first_seen = dp.first_seen.timestamp()
@@ -531,11 +574,18 @@ class GlobalPersonTracker:
                     
                     self.persons[dp.global_id] = person
                     
+                    # Add embedding to FAISS index
+                    if face_emb is not None and self.faiss_service.is_available():
+                        self.faiss_service.add_embedding(dp.global_id, face_emb)
+                    
                     # Update next_global_id
                     if dp.global_id >= self.next_global_id:
                         self.next_global_id = dp.global_id + 1
                 
                 logger.info(f"📥 Loaded {len(active_persons)} active persons from database")
+                if self.faiss_service.is_available():
+                    stats = self.faiss_service.get_stats()
+                    logger.info(f"🔍 FAISS index initialized with {stats['total_embeddings']} embeddings")
                 
             finally:
                 db.close()
