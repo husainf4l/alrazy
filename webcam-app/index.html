@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Vision Analyzer | Corporate Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        corporate: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-100 shadow-sm">
+        <div class="max-w-7xl mx-auto px-6 py-3">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-eye text-white text-sm"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-semibold text-gray-900">AI Vision</h1>
+                        <p class="text-xs text-gray-500">Real-time Analysis</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span class="text-sm text-gray-600">Live</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-6 py-4">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            
+            <!-- Video Feed -->
+            <div class="lg:col-span-3">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="p-4 border-b border-gray-50">
+                        <h2 class="text-sm font-medium text-gray-900">Live Feed</h2>
+                    </div>
+                    <div class="p-4">
+                        <div class="relative bg-gray-900 rounded-lg overflow-hidden" style="aspect-ratio: 4/3;">
+                            <img id="video-feed" 
+                                 src="/video_feed" 
+                                 class="w-full h-full object-contain"
+                                 alt="AI Vision Feed">
+                            <div class="absolute top-3 left-3 px-2 py-1 bg-red-500 text-white text-xs font-medium rounded-md">
+                                LIVE
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="space-y-4">
+                
+                <!-- Model Selection -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-3">Model</label>
+                    <select id="model-select" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <!-- Settings -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-4">
+                    <h3 class="text-sm font-medium text-gray-700">Settings</h3>
+                    
+                    <!-- Confidence -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs text-gray-600">Confidence</label>
+                            <span id="confidence-value" class="text-xs font-medium text-blue-600">0.25</span>
+                        </div>
+                        <input type="range" id="confidence-slider" min="0.1" max="0.9" step="0.05" value="0.25"
+                               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- IoU -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <label class="text-xs text-gray-600">IoU</label>
+                            <span id="iou-value" class="text-xs font-medium text-blue-600">0.45</span>
+                        </div>
+                        <input type="range" id="iou-slider" min="0.1" max="0.9" step="0.05" value="0.45"
+                               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Display Options -->
+                    <div class="space-y-2">
+                        <label class="text-xs text-gray-600">Display</label>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="show-labels" checked 
+                                       class="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-1">
+                                <span class="text-gray-700">Labels</span>
+                            </label>
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="show-confidence" checked 
+                                       class="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-1">
+                                <span class="text-gray-700">Values</span>
+                            </label>
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="show-pose-keypoints" checked 
+                                       class="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-1">
+                                <span class="text-gray-700">Points</span>
+                            </label>
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="show-pose-skeleton" checked 
+                                       class="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-1">
+                                <span class="text-gray-700">Lines</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Apply Button -->
+                    <button id="apply-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors duration-200">
+                        Apply
+                    </button>
+                </div>
+
+                <!-- Model Info -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <h3 class="text-sm font-medium text-gray-700 mb-3">Info</h3>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Model:</span>
+                            <span id="current-model" class="font-medium text-gray-900">-</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Type:</span>
+                            <span id="model-type" class="font-medium text-gray-900">-</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Size:</span>
+                            <span id="model-size" class="font-medium text-gray-900">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pose Reference (compact) -->
+                <div id="pose-reference" class="bg-white rounded-xl shadow-sm border border-gray-100 p-4" style="display: none;">
+                    <h3 class="text-sm font-medium text-gray-700 mb-3">Keypoints</h3>
+                    
+                    <!-- Confidence Legend (minimal) -->
+                    <div class="mb-3 p-2 bg-gray-50 rounded-lg">
+                        <div class="flex items-center space-x-3 text-xs">
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                                <span>High</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
+                                <span>Med</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
+                                <span>Low</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="keypoints-list" class="grid grid-cols-1 gap-1 text-xs max-h-40 overflow-y-auto">
+                        <!-- Keypoints populated by JS -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket and Canvas Management
+        let ws = null;
+        let canvas = null;
+        let ctx = null;
+        let videoElement = null;
+        let isCanvasReady = false;
+        
+        // Application state
+        let currentSettings = {
+            model_name: '',
+            confidence: 0.25,
+            iou_threshold: 0.45,
+            show_labels: true,
+            show_confidence: true,
+            show_pose_keypoints: true,
+            show_pose_skeleton: true
+        };
+
+        // DOM elements
+        const modelSelect = document.getElementById('model-select');
+        const confidenceSlider = document.getElementById('confidence-slider');
+        const confidenceValue = document.getElementById('confidence-value');
+        const iouSlider = document.getElementById('iou-slider');
+        const iouValue = document.getElementById('iou-value');
+        const showLabels = document.getElementById('show-labels');
+        const showConfidence = document.getElementById('show-confidence');
+        const showPoseKeypoints = document.getElementById('show-pose-keypoints');
+        const showPoseSkeleton = document.getElementById('show-pose-skeleton');
+        const applyBtn = document.getElementById('apply-btn');
+
+        // Model info elements
+        const currentModelEl = document.getElementById('current-model');
+        const modelTypeEl = document.getElementById('model-type');
+        const modelSizeEl = document.getElementById('model-size');
+
+        // Load available models
+        async function loadModels() {
+            try {
+                const response = await fetch('/api/models');
+                const data = await response.json();
+                const models = data.models;
+
+                modelSelect.innerHTML = '';
+                Object.entries(models).forEach(([filename, info]) => {
+                    const option = document.createElement('option');
+                    option.value = filename;
+                    option.textContent = `${info.name} (${info.type}) - ${info.size}`;
+                    modelSelect.appendChild(option);
+                });
+
+                if (Object.keys(models).length > 0) {
+                    const firstModel = Object.keys(models)[0];
+                    modelSelect.value = firstModel;
+                    updateModelInfo(models[firstModel]);
+                }
+
+            } catch (error) {
+                console.error('Error loading models:', error);
+                modelSelect.innerHTML = '<option value="">Error loading models</option>';
+            }
+        }
+
+        // Load current settings
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                
+                currentSettings = settings;
+                
+                // Update UI
+                modelSelect.value = settings.model_name;
+                confidenceSlider.value = settings.confidence;
+                confidenceValue.textContent = settings.confidence;
+                iouSlider.value = settings.iou_threshold || 0.45;
+                iouValue.textContent = settings.iou_threshold || 0.45;
+                showLabels.checked = settings.show_labels;
+                showConfidence.checked = settings.show_confidence;
+                showPoseKeypoints.checked = settings.show_pose_keypoints !== false;
+                showPoseSkeleton.checked = settings.show_pose_skeleton !== false;
+
+                currentModelEl.textContent = settings.model_name || '-';
+
+                // Show/hide pose controls based on model type
+                updatePoseControlsVisibility(settings.model_name);
+
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        // Update model info display
+        function updateModelInfo(modelInfo) {
+            currentModelEl.textContent = modelInfo.name;
+            modelTypeEl.textContent = modelInfo.type;
+            modelSizeEl.textContent = modelInfo.size;
+        }
+
+        // Apply settings
+        // Apply settings via WebSocket
+        async function applySettings() {
+            try {
+                showNotification('Applying settings...', 'info');
+                
+                // Update local settings
+                currentSettings = {
+                    model_name: document.getElementById('model-select').value,
+                    confidence: parseFloat(document.getElementById('confidence-slider').value),
+                    iou_threshold: parseFloat(document.getElementById('iou-slider').value),
+                    show_labels: document.getElementById('show-labels').checked,
+                    show_confidence: document.getElementById('show-confidence').checked,
+                    show_pose_keypoints: document.getElementById('show-pose-keypoints').checked,
+                    show_pose_skeleton: document.getElementById('show-pose-skeleton').checked
+                };
+                
+                // Send via WebSocket
+                sendSettingsUpdate();
+                
+                // Update UI
+                updateModelInfo();
+                updatePoseReferenceVisibility();
+                
+                showNotification('Settings applied successfully', 'success');
+                
+            } catch (error) {
+                console.error('Settings application failed:', error);
+                showNotification('Failed to apply settings', 'error');
+            }
+        }
+
+        // Update pose controls visibility based on model type
+        function updatePoseControlsVisibility(modelName) {
+            const isPoseModel = modelName && modelName.toLowerCase().includes('pose');
+            const poseControls = [
+                showPoseKeypoints.closest('label'),
+                showPoseSkeleton.closest('label')
+            ];
+            
+            // Show/hide pose control checkboxes
+            poseControls.forEach(control => {
+                if (control) {
+                    control.style.display = isPoseModel ? 'flex' : 'none';
+                }
+            });
+
+            // Show/hide pose keypoints reference panel
+            const poseReference = document.getElementById('pose-reference');
+            if (poseReference) {
+                poseReference.style.display = isPoseModel ? 'block' : 'none';
+            }
+
+            // Load pose keypoints if it's a pose model
+            if (isPoseModel) {
+                loadPoseKeypoints();
+            }
+        }
+
+        // Load and display pose keypoints reference
+        async function loadPoseKeypoints() {
+            try {
+                const response = await fetch('/api/pose-keypoints');
+                const data = await response.json();
+                
+                const keypointsList = document.getElementById('keypoints-list');
+                if (keypointsList && data.keypoints) {
+                    keypointsList.innerHTML = '';
+                    
+                    data.keypoints.forEach((keypoint, index) => {
+                        const keypointDiv = document.createElement('div');
+                        keypointDiv.className = 'flex justify-between py-1 px-2 bg-gray-50 rounded text-xs';
+                        keypointDiv.innerHTML = `
+                            <span class="text-gray-500">${index + 1}.</span>
+                            <span class="font-medium text-gray-800">${keypoint.replace('_', ' ')}</span>
+                        `;
+                        keypointsList.appendChild(keypointDiv);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading pose keypoints:', error);
+            }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 px-4 py-2 rounded-md text-white z-50 ${
+                type === 'success' ? 'bg-green-500' : 
+                type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+            }`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Event listeners
+        confidenceSlider.addEventListener('input', (e) => {
+            confidenceValue.textContent = e.target.value;
+        });
+
+        iouSlider.addEventListener('input', (e) => {
+            iouValue.textContent = e.target.value;
+        });
+
+        applyBtn.addEventListener('click', applySettings);
+
+        // Model selection change
+        modelSelect.addEventListener('change', async () => {
+            if (modelSelect.value) {
+                try {
+                    const response = await fetch('/api/models');
+                    const data = await response.json();
+                    const modelInfo = data.models[modelSelect.value];
+                    if (modelInfo) {
+                        updateModelInfo(modelInfo);
+                        updatePoseControlsVisibility(modelSelect.value);
+                    }
+                } catch (error) {
+                    console.error('Error updating model info:', error);
+                }
+            }
+        });
+
+        
+        // WebSocket and Canvas Management Functions
+        function initializeWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/ai_overlay`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function(event) {
+                console.log('WebSocket connected');
+                updateConnectionStatus('connected');
+            };
+            
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'ai_overlay') {
+                        drawAIOverlay(data);
+                    } else if (data.type === 'error') {
+                        console.error('WebSocket error:', data.message);
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+            
+            ws.onclose = function(event) {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus('disconnected');
+                setTimeout(initializeWebSocket, 3000);
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus('error');
+            };
+        }
+        
+        function updateConnectionStatus(status) {
+            const statusEl = document.getElementById('ws-status');
+            if (!statusEl) return;
+            
+            switch(status) {
+                case 'connected':
+                    statusEl.textContent = 'AI Connected';
+                    statusEl.className = statusEl.className.replace(/bg-\w+-500/, 'bg-green-500');
+                    break;
+                case 'disconnected':
+                    statusEl.textContent = 'AI Disconnected';
+                    statusEl.className = statusEl.className.replace(/bg-\w+-500/, 'bg-red-500');
+                    break;
+                case 'error':
+                    statusEl.textContent = 'AI Error';
+                    statusEl.className = statusEl.className.replace(/bg-\w+-500/, 'bg-red-500');
+                    break;
+                default:
+                    statusEl.textContent = 'Connecting AI...';
+                    statusEl.className = statusEl.className.replace(/bg-\w+-500/, 'bg-yellow-500');
+            }
+        }
+        
+        function initializeCanvas() {
+            canvas = document.getElementById('ai-overlay');
+            videoElement = document.getElementById('video-feed');
+            
+            if (!canvas || !videoElement) {
+                console.error('Canvas or video element not found');
+                return;
+            }
+            
+            ctx = canvas.getContext('2d');
+            
+            function updateCanvasSize() {
+                const rect = videoElement.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                isCanvasReady = true;
+            }
+            
+            videoElement.addEventListener('load', updateCanvasSize);
+            window.addEventListener('resize', updateCanvasSize);
+            
+            if (videoElement.complete) {
+                updateCanvasSize();
+            }
+        }
+        
+        function drawAIOverlay(data) {
+            if (!isCanvasReady || !ctx) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (currentSettings.show_labels && data.detections) {
+                drawDetections(data.detections);
+            }
+            
+            if (data.pose_keypoints && data.pose_keypoints.length > 0) {
+                drawPoseKeypoints(data.pose_keypoints);
+            }
+        }
+        
+        function drawDetections(detections) {
+            detections.forEach(detection => {
+                const x1 = detection.bbox.x1 * canvas.width;
+                const y1 = detection.bbox.y1 * canvas.height;
+                const x2 = detection.bbox.x2 * canvas.width;
+                const y2 = detection.bbox.y2 * canvas.height;
+                
+                const color = getClassColor(detection.class_id);
+                
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                
+                if (currentSettings.show_labels) {
+                    const label = detection.label;
+                    ctx.font = '12px Arial';
+                    const metrics = ctx.measureText(label);
+                    
+                    let labelX = x1;
+                    let labelY = Math.max(15, y1 - 2);
+                    
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.fillRect(labelX - 2, labelY - 13, metrics.width + 4, 16);
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(label, labelX, labelY);
+                }
+            });
+        }
+        
+        function drawPoseKeypoints(poseData) {
+            poseData.forEach(person => {
+                person.keypoints.forEach(keypoint => {
+                    const x = keypoint.x * canvas.width;
+                    const y = keypoint.y * canvas.height;
+                    
+                    let color = keypoint.confidence >= 0.8 ? '#00ff00' : 
+                               keypoint.confidence >= 0.6 ? '#ffff00' : '#ffa500';
+                    
+                    if (currentSettings.show_pose_keypoints) {
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                        
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        
+                        if (currentSettings.show_labels) {
+                            const label = keypoint.name;
+                            ctx.font = '10px Arial';
+                            
+                            let labelX = Math.max(1, x - 20);
+                            let labelY = Math.max(12, y - 8);
+                            
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                            ctx.fillRect(labelX - 1, labelY - 10, ctx.measureText(label).width + 2, 12);
+                            
+                            ctx.fillStyle = 'white';
+                            ctx.fillText(label, labelX, labelY);
+                        }
+                    }
+                });
+            });
+        }
+        
+        function getClassColor(classId) {
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500'];
+            return colors[classId % colors.length];
+        }
+        
+        function sendSettingsUpdate() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const settings = {
+                    model_name: document.getElementById('model-select').value,
+                    confidence: parseFloat(document.getElementById('confidence-slider').value),
+                    iou_threshold: parseFloat(document.getElementById('iou-slider').value),
+                    show_labels: document.getElementById('show-labels').checked,
+                    show_confidence: document.getElementById('show-confidence').checked,
+                    show_pose_keypoints: document.getElementById('show-pose-keypoints').checked,
+                    show_pose_skeleton: document.getElementById('show-pose-skeleton').checked
+                };
+                
+                ws.send(JSON.stringify({
+                    type: 'update_settings',
+                    data: settings
+                }));
+            }
+        }
+
+        // Initialize application
+        async function init() {
+            await loadModels();
+            await loadSettings();
+            initializeCanvas();
+            initializeWebSocket();
+            showNotification('AI Vision Analyzer loaded successfully', 'success');
+        }
+
+        // Start application
+        init();
+    </script>
+</body>
+</html>
