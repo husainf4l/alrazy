@@ -1,5 +1,5 @@
 """
-People Detection and Tracking Service using YOLO11 + ByteTrack + DeepSORT
+People Detection and Tracking Service using YOLO11 + ByteTrack
 Following clean architecture principles with centralized configuration
 """
 
@@ -9,7 +9,6 @@ from collections import defaultdict, deque
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import supervision as sv
-from deep_sort_realtime.deepsort_tracker import DeepSort
 from logging_config import get_logger
 from config import get_settings
 
@@ -18,7 +17,7 @@ settings = get_settings()
 
 
 class TrackingService:
-    """ByteTrack (30 FPS) + DeepSORT ReID fallback with global cross-camera tracking"""
+    """ByteTrack (30 FPS) with spatial-based global cross-camera tracking"""
     
     def __init__(self, conf_threshold: float = None, bytetrack_threshold: float = None):
         logger.info("Initializing tracking service with clean architecture...")
@@ -30,17 +29,15 @@ class TrackingService:
         
         # Tracking state
         self.byte_trackers = {}
-        self.deepsort_trackers = {}
         self.camera_tracks = defaultdict(lambda: {
             'count': 0, 'tracks': {}, 'history': deque(maxlen=100),
-            'last_update': None, 'bytetrack_confident': 0,
-            'deepsort_assisted': 0, 'last_frame': None, 'frame_count': 0
+            'last_update': None, 'last_frame': None, 'frame_count': 0
         })
         
-        # Global ReID for cross-camera tracking (using config values)
+        # Global tracking for cross-camera (spatial-based)
         self.global_person_id = 0
         self.global_id_map = {}  # {f"{camera_id}_{local_track_id}": global_id}
-        self.global_features = {}  # {global_id: feature_vector}
+        self.global_positions = {}  # {global_id: (x, y, width, height)}
         self.global_last_seen = {}  # {global_id: timestamp}
         self.person_names = {}  # {global_id: name}
         self.global_id_timeout = settings.GLOBAL_ID_TIMEOUT
@@ -68,29 +65,14 @@ class TrackingService:
             logger.info(f"Created ByteTrack tracker for camera {camera_id}")
         return self.byte_trackers[camera_id]
     
-    def _get_deepsort_tracker(self, camera_id: int) -> DeepSort:
-        if camera_id not in self.deepsort_trackers:
-            embedder_gpu = (self.device == 'cuda')
-            self.deepsort_trackers[camera_id] = DeepSort(
-                max_age=30, n_init=3, nms_max_overlap=0.7,
-                max_cosine_distance=0.3, nn_budget=100,
-                embedder="mobilenet", embedder_gpu=embedder_gpu,
-                embedder_wts=None, polygon=False, today=None
-            )
-            if embedder_gpu:
-                logger.info(f"🎮 DeepSORT using GPU for camera {camera_id}")
-            logger.info(f"Created DeepSORT tracker for camera {camera_id}")
-        return self.deepsort_trackers[camera_id]
-    
-    def track_people(self, camera_id: int, frame: np.ndarray, detections_sv, run_deepsort: bool = True) -> Dict:
+    def track_people(self, camera_id: int, frame: np.ndarray, detections_sv) -> Dict:
         """
-        Track people using ByteTrack (30 FPS) with optional DeepSORT fallback (2 FPS)
+        Track people using ByteTrack (30 FPS) with spatial-based global ID matching
         
         Args:
             camera_id: Camera identifier
             frame: Input frame
             detections_sv: Pre-computed YOLO detections (supervision format)
-            run_deepsort: Whether to run DeepSORT for uncertain tracks (2 FPS)
             
         Returns:
             Dictionary with tracking information
@@ -111,113 +93,26 @@ class TrackingService:
         
         # Increment frame count for this camera
         self.camera_tracks[camera_id]['frame_count'] += 1
-        frame_count = self.camera_tracks[camera_id]['frame_count']
         
-        # Step 1: Apply ByteTrack tracking (runs at 30 FPS)
+        # Apply ByteTrack tracking (runs at 30 FPS)
         byte_tracker = self._get_bytetrack_tracker(camera_id)
         tracked_detections = byte_tracker.update_with_detections(detections_sv)
         
         logger.debug(f"📍 Camera {camera_id}: ByteTrack returned {len(tracked_detections.tracker_id)} tracked objects")
         
-        # Extract features every N frames to balance speed and quality, OR if embedder just became available
-        extract_features = (frame_count % 5 == 0) or (camera_id not in self.deepsort_trackers)
-        
-        uncertain_detections = []
         confident_tracks = {}
         
         for i, track_id in enumerate(tracked_detections.tracker_id):
             confidence = tracked_detections.confidence[i]
             bbox = tracked_detections.xyxy[i]
             
-            # Extract crop for appearance feature (periodically for performance)
-            feature = None
-            if extract_features:
-                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-                # Add padding to ensure valid crop
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
-                crop = frame[y1:y2, x1:x2]
-                
-                # Get DeepSORT embedder to extract feature (creates tracker if needed)
-                if crop.size > 0 and crop.shape[0] > 0 and crop.shape[1] > 0:
-                    try:
-                        # Get or create DeepSORT tracker to access embedder
-                        deepsort_tracker = self._get_deepsort_tracker(camera_id)
-                        # Extract appearance feature using DeepSORT's embedder
-                        if hasattr(deepsort_tracker, 'embedder') and deepsort_tracker.embedder is not None:
-                            feature = deepsort_tracker.embedder.predict([crop])[0]
-                            if feature is not None:
-                                logger.info(f"✅ Extracted feature for Cam{camera_id} Track{track_id}: shape={feature.shape if hasattr(feature, 'shape') else len(feature)}")
-                        else:
-                            logger.warning(f"⚠️ DeepSORT embedder not available for camera {camera_id}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to extract feature for Cam{camera_id} Track{track_id}: {e}", exc_info=True)
-                        feature = None
-                else:
-                    logger.debug(f"⚠️ Invalid crop for Cam{camera_id} Track{track_id}: shape={crop.shape if crop.size > 0 else 'empty'}")
-            
-            if confidence >= self.bytetrack_threshold:
-                # Preserve existing feature if we didn't extract a new one
-                existing_feature = None
-                if not extract_features and camera_id in self.camera_tracks:
-                    existing_track = self.camera_tracks[camera_id].get('tracks', {}).get(int(track_id))
-                    if existing_track:
-                        existing_feature = existing_track.get('feature')
-                
-                final_feature = feature if feature is not None else existing_feature
-                
-                confident_tracks[int(track_id)] = {
-                    'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
-                    'confidence': float(confidence),
-                    'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
-                    'source': 'bytetrack',
-                    'feature': final_feature,  # Use new feature or preserve existing
-                    'last_seen': datetime.now()
-                }
-                self.camera_tracks[camera_id]['bytetrack_confident'] += 1
-            else:
-                uncertain_detections.append({
-                    'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
-                    'confidence': float(confidence),
-                    'bytetrack_id': int(track_id),
-                    'feature': feature
-                })
-        
-        # Step 2: Apply DeepSORT for uncertain tracks (only at 2 FPS)
-        if run_deepsort and len(uncertain_detections) > 0:
-            deepsort_tracker = self._get_deepsort_tracker(camera_id)
-            deepsort_input = []
-            for det in uncertain_detections:
-                bbox = det['bbox']
-                deepsort_bbox = [bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]]
-                deepsort_input.append((deepsort_bbox, det['confidence'], 'person'))
-            
-            deepsort_tracks = deepsort_tracker.update_tracks(deepsort_input, frame=frame)
-            
-            for track in deepsort_tracks:
-                if track.is_confirmed():
-                    bbox = track.to_ltrb()
-                    try:
-                        deepsort_key = -int(track.track_id)
-                    except:
-                        deepsort_key = f"ds_{track.track_id}"
-                    
-                    # Extract appearance feature from DeepSORT track
-                    feature = None
-                    if hasattr(track, 'get_feature') and callable(track.get_feature):
-                        feature = track.get_feature()
-                    elif hasattr(track, 'features') and len(track.features) > 0:
-                        feature = track.features[-1]  # Get latest feature
-                    
-                    confident_tracks[deepsort_key] = {
-                        'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
-                        'confidence': track.get_det_conf() if hasattr(track, 'get_det_conf') else 0.5,
-                        'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
-                        'source': 'deepsort',
-                        'feature': feature,  # Store appearance feature
-                        'last_seen': datetime.now()
-                    }
-                    self.camera_tracks[camera_id]['deepsort_assisted'] += 1
+            confident_tracks[int(track_id)] = {
+                'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
+                'confidence': float(confidence),
+                'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
+                'source': 'bytetrack',
+                'last_seen': datetime.now()
+            }
         
         self.camera_tracks[camera_id]['tracks'] = confident_tracks
         self.camera_tracks[camera_id]['count'] = len(confident_tracks)
@@ -237,9 +132,7 @@ class TrackingService:
             'people_count': len(confident_tracks),
             'detections': [],  # Detections are passed in, not computed here
             'tracks': confident_tracks,
-            'timestamp': datetime.now().isoformat(),
-            'bytetrack_confident': self.camera_tracks[camera_id]['bytetrack_confident'],
-            'deepsort_assisted': self.camera_tracks[camera_id]['deepsort_assisted']
+            'timestamp': datetime.now().isoformat()
         }
     
     def draw_tracks(self, frame: np.ndarray, camera_id: int) -> np.ndarray:
@@ -423,27 +316,20 @@ class TrackingService:
     
     def _assign_global_ids(self, camera_id: int, tracks: Dict):
         """
-        Assign global IDs to tracks based on cross-camera ReID matching
-        Same person gets same global ID across all cameras
-        
-        Best practices for multi-camera tracking:
-        1. Use appearance features (ReID) as primary matching
-        2. Lower similarity threshold (0.5) to catch more matches
-        3. Consider temporal constraints (people don't teleport)
-        4. Update global features with running average
+        Assign global IDs to tracks using spatial matching across cameras
+        Since cameras view the same space, we use position and size to match people
         """
         current_time = datetime.now()
         
-        # Clean up expired global IDs (30 seconds timeout)
+        # Clean up expired global IDs
         expired_ids = []
         for global_id, last_seen in self.global_last_seen.items():
             if (current_time - last_seen).total_seconds() > self.global_id_timeout:
                 expired_ids.append(global_id)
         
         for global_id in expired_ids:
-            self.global_features.pop(global_id, None)
+            self.global_positions.pop(global_id, None)
             self.global_last_seen.pop(global_id, None)
-            # Remove from map
             keys_to_remove = [k for k, v in self.global_id_map.items() if v == global_id]
             for k in keys_to_remove:
                 self.global_id_map.pop(k, None)
@@ -451,152 +337,50 @@ class TrackingService:
         # Process each track
         for track_id, track_data in tracks.items():
             local_track_key = f"{camera_id}_{track_id}"
-            feature = track_data.get('feature')
+            bbox = track_data.get('bbox')
             
-            # If already has global ID
+            # If already has global ID, just update
             if local_track_key in self.global_id_map:
                 global_id = self.global_id_map[local_track_key]
-                
-                # Check if this track just got its first feature and should be re-matched
-                had_no_feature = global_id not in self.global_features
-                
-                if feature is not None and had_no_feature and len(self.global_features) > 0:
-                    # This track was assigned a global ID without a feature
-                    # Now it has a feature - try to match it with existing global IDs from OTHER cameras
-                    logger.info(f"🔄 Re-matching Cam{camera_id} Track{track_id} (Global ID {global_id}) - got first feature")
-                    
-                    best_match_id = None
-                    best_similarity = 0.0
-                    
-                    for other_global_id, other_feature in self.global_features.items():
-                        if other_global_id == global_id:
-                            continue  # Don't match with self
-                            
-                        # Skip if this global ID is from the same camera
-                        existing_keys = [k for k, v in self.global_id_map.items() if v == other_global_id]
-                        same_camera = any(k.startswith(f"{camera_id}_") for k in existing_keys)
-                        
-                        if same_camera:
-                            continue
-                        
-                        similarity = self._cosine_similarity(feature, other_feature)
-                        
-                        if similarity > best_similarity and similarity > settings.GLOBAL_ID_SIMILARITY_THRESHOLD:
-                            best_similarity = similarity
-                            best_match_id = other_global_id
-                    
-                    if best_match_id is not None:
-                        # Found a better match! Re-assign this track
-                        logger.info(f"✅ RE-MATCHED Cam{camera_id} Track{track_id}: Global ID {global_id} → {best_match_id} (sim={best_similarity:.3f})")
-                        
-                        # Update mapping
-                        self.global_id_map[local_track_key] = best_match_id
-                        self.global_last_seen[best_match_id] = current_time
-                        
-                        # Update feature
-                        if best_match_id in self.global_features:
-                            old_feature = self.global_features[best_match_id]
-                            smoothing = settings.GLOBAL_ID_FEATURE_SMOOTHING
-                            self.global_features[best_match_id] = smoothing * old_feature + (1 - smoothing) * feature
-                        else:
-                            self.global_features[best_match_id] = feature
-                        
-                        # Clean up old global ID if no other tracks use it
-                        keys_with_old_id = [k for k, v in self.global_id_map.items() if v == global_id]
-                        if len(keys_with_old_id) == 0:
-                            self.global_features.pop(global_id, None)
-                            self.global_last_seen.pop(global_id, None)
-                            logger.info(f"🗑️ Removed unused Global ID {global_id}")
-                        
-                        continue
-                
-                # Normal update - just update last seen and feature
                 self.global_last_seen[global_id] = current_time
-                
-                # Update feature with running average if available (use config smoothing)
-                if feature is not None and global_id in self.global_features:
-                    old_feature = self.global_features[global_id]
-                    smoothing = settings.GLOBAL_ID_FEATURE_SMOOTHING
-                    self.global_features[global_id] = smoothing * old_feature + (1 - smoothing) * feature
-                elif feature is not None:
-                    self.global_features[global_id] = feature
-                
+                self.global_positions[global_id] = bbox
                 continue
             
-            # Try to match with existing global IDs from OTHER cameras
+            # Try to match with existing global IDs from OTHER cameras using spatial overlap
             best_match_id = None
-            best_similarity = 0.0
+            best_iou = 0.0
             
-            if feature is not None and len(self.global_features) > 0:
-                logger.debug(f"🔍 Trying to match Cam{camera_id} Track{track_id} with {len(self.global_features)} global IDs")
-                for global_id, global_feature in self.global_features.items():
-                    # Skip if this global ID is from the same camera (already matched locally)
+            if len(self.global_positions) > 0:
+                for global_id, global_bbox in self.global_positions.items():
+                    # Skip if this global ID is from the same camera
                     existing_keys = [k for k, v in self.global_id_map.items() if v == global_id]
                     same_camera = any(k.startswith(f"{camera_id}_") for k in existing_keys)
                     
                     if same_camera:
-                        logger.debug(f"  ⏭️ Skip Global ID {global_id} (same camera)")
-                        continue  # Don't match with IDs from same camera
+                        continue
                     
-                    similarity = self._cosine_similarity(feature, global_feature)
-                    logger.debug(f"  📊 Global ID {global_id}: similarity={similarity:.3f} (threshold={settings.GLOBAL_ID_SIMILARITY_THRESHOLD})")
+                    # Calculate IoU (Intersection over Union)
+                    iou = self._calculate_iou(bbox, global_bbox)
                     
-                    if similarity > best_similarity and similarity > settings.GLOBAL_ID_SIMILARITY_THRESHOLD:
-                        best_similarity = similarity
+                    # Use IoU threshold of 0.3 for spatial matching
+                    if iou > best_iou and iou > 0.3:
+                        best_iou = iou
                         best_match_id = global_id
-            elif feature is None:
-                logger.debug(f"⚠️ Cam{camera_id} Track{track_id} has NO feature vector - cannot match")
             
             if best_match_id is not None:
                 # Match found - assign existing global ID
                 self.global_id_map[local_track_key] = best_match_id
                 self.global_last_seen[best_match_id] = current_time
-                
-                # Update feature with running average (configurable smoothing)
-                if feature is not None and best_match_id in self.global_features:
-                    old_feature = self.global_features[best_match_id]
-                    smoothing = settings.GLOBAL_ID_FEATURE_SMOOTHING
-                    self.global_features[best_match_id] = smoothing * old_feature + (1 - smoothing) * feature
-                elif feature is not None:
-                    self.global_features[best_match_id] = feature
-                
-                logger.info(f"✅ Matched Cam{camera_id} Track{track_id} → Global ID {best_match_id} (sim={best_similarity:.3f})")
+                self.global_positions[best_match_id] = bbox
+                logger.info(f"✅ Matched Cam{camera_id} Track{track_id} → Global ID {best_match_id} (IoU={best_iou:.3f})")
             else:
                 # No match - create new global ID
                 self.global_person_id += 1
                 new_global_id = self.global_person_id
                 self.global_id_map[local_track_key] = new_global_id
                 self.global_last_seen[new_global_id] = current_time
-                if feature is not None:
-                    self.global_features[new_global_id] = feature
-                    logger.info(f"🆕 New Global ID {new_global_id} for Cam{camera_id} Track{track_id} (has feature)")
-                else:
-                    logger.info(f"🆕 New Global ID {new_global_id} for Cam{camera_id} Track{track_id} (NO feature)")
-    
-    def _cosine_similarity(self, feature1, feature2) -> float:
-        """Calculate cosine similarity between two feature vectors"""
-        try:
-            if isinstance(feature1, list):
-                feature1 = np.array(feature1)
-            if isinstance(feature2, list):
-                feature2 = np.array(feature2)
-            
-            # Flatten if needed
-            feature1 = feature1.flatten()
-            feature2 = feature2.flatten()
-            
-            # Calculate cosine similarity
-            dot_product = np.dot(feature1, feature2)
-            norm1 = np.linalg.norm(feature1)
-            norm2 = np.linalg.norm(feature2)
-            
-            if norm1 == 0 or norm2 == 0:
-                return 0.0
-            
-            return dot_product / (norm1 * norm2)
-        except Exception as e:
-            logger.warning(f"Error calculating cosine similarity: {e}")
-            return 0.0
+                self.global_positions[new_global_id] = bbox
+                logger.info(f"🆕 New Global ID {new_global_id} for Cam{camera_id} Track{track_id}")
     
     def _calculate_iou(self, bbox1: List[float], bbox2: List[float]) -> float:
         """Calculate Intersection over Union between two bounding boxes"""

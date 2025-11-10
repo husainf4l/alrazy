@@ -155,21 +155,17 @@ async def save_room_layout(
         print(f"DEBUG: Save layout - Room ID: {room_id}, Name: {name}, Location: {location}")
         print(f"DEBUG: Layout data: {layout_data}")
         
-        if not name or not location:
-            raise HTTPException(
-                status_code=400, 
-                detail="Name and location are required"
-            )
-        
         # If room_id provided, update existing room
         if room_id:
             vault_room = db.query(VaultRoom).filter(VaultRoom.id == int(room_id)).first()
             if not vault_room:
                 raise HTTPException(status_code=404, detail="Vault room not found")
             
-            # Update existing room
-            vault_room.name = name
-            vault_room.location = location
+            # Update existing room - keep existing location if not provided
+            if name:
+                vault_room.name = name
+            if location and location != 'Unknown':
+                vault_room.location = location
             vault_room.room_width = width
             vault_room.room_height = height
             vault_room.room_layout = layout_data
@@ -177,6 +173,12 @@ async def save_room_layout(
             print(f"DEBUG: Updated existing room {room_id}")
         else:
             # Create new vault room with layout
+            if not name or not location:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Name and location are required for new rooms"
+                )
+            
             vault_room = VaultRoom(
                 name=name,
                 location=location,

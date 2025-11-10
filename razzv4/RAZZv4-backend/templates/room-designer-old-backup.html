@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Designer - Razz v4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sf': ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 font-sf text-gray-900">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-64 bg-white border-r border-gray-200 flex flex-col">
+            <!-- Logo -->
+            <div class="flex items-center px-6 py-4 border-b border-gray-200">
+                <span class="text-xl font-light text-gray-900">Razz</span>
+                <span class="text-xl font-extralight text-gray-500 ml-1">v4</span>
+            </div>
+
+            <!-- Navigation Menu -->
+            <nav class="flex-1 px-4 py-6 space-y-2">
+                <a href="/dashboard" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    Dashboard
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    Live Cameras
+                </a>
+                <a href="/vault-room" class="flex items-center px-4 py-3 text-sm font-medium text-gray-900 bg-gray-100 rounded-sm">
+                    Vault Room
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    People Count
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    Alerts & Reports
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    Analytics
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    Settings
+                </a>
+            </nav>
+
+            <!-- Back Button -->
+            <div class="px-4 py-4 border-t border-gray-200">
+                <a href="/vault-room" class="flex items-center px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-sm transition-colors duration-200">
+                    ← Back to Vault Rooms
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 overflow-auto">
+            <div class="p-8">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-8">
+                    <div>
+                        <h1 class="text-3xl font-light text-gray-900 mb-2">Room Designer</h1>
+                        <p class="text-gray-600 font-light">Design your vault room layout with cameras and security zones</p>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button id="clearCanvas" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition-colors duration-200">
+                            Clear
+                        </button>
+                        <button id="saveLayout" class="bg-gray-900 hover:bg-gray-800 text-white px-6 py-3 font-medium transition-colors duration-300">
+                            Save Layout
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex space-x-8">
+                    <!-- Tools Panel -->
+                    <div class="w-80 bg-white border border-gray-200 p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-6">Design Tools</h3>
+                        
+                        <!-- Drawing Tools -->
+                        <div class="mb-6">
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Drawing Mode</h4>
+                            <div class="space-y-2">
+                                <button id="wallTool" class="w-full px-4 py-3 border border-gray-300 text-left hover:bg-gray-50 transition-colors duration-200 tool-btn active">
+                                    Draw Walls
+                                </button>
+                                <button id="doorTool" class="w-full px-4 py-3 border border-gray-300 text-left hover:bg-gray-50 transition-colors duration-200 tool-btn">
+                                    Add Doors
+                                </button>
+                                <button id="vaultTool" class="w-full px-4 py-3 border border-gray-300 text-left hover:bg-gray-50 transition-colors duration-200 tool-btn">
+                                    Place Vault
+                                </button>
+                                <button id="selectTool" class="w-full px-4 py-3 border border-gray-300 text-left hover:bg-gray-50 transition-colors duration-200 tool-btn">
+                                    Select/Move
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Room Info -->
+                        <div class="mb-6">
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Room Information</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Room Name</label>
+                                    <input id="roomName" type="text" placeholder="Main Vault Room" class="w-full px-3 py-2 border border-gray-300 text-sm" readonly>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Location</label>
+                                    <input id="roomLocation" type="text" placeholder="Building A - Level B2" class="w-full px-3 py-2 border border-gray-300 text-sm" readonly>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-600 mb-1">Room Dimensions</label>
+                                    <input id="roomDimensions" type="text" placeholder="10 × 8" class="w-full px-3 py-2 border border-gray-300 text-sm bg-gray-50" readonly>
+                                </div>
+                                <button id="setDimensionsBtn" class="w-full px-4 py-2 bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors duration-200">
+                                    Set Custom Dimensions
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Active Cameras List -->
+                        <div class="mb-6">
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Active Cameras</h4>
+                            <div id="activeCamerasList" class="space-y-2 max-h-48 overflow-y-auto">
+                                <!-- Will be populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Selected Element Properties -->
+                        <div id="elementProperties" class="mb-6 hidden">
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Selected Element</h4>
+                            <div class="space-y-3 p-3 bg-blue-50 border border-blue-200">
+                                <div id="cameraProperties" class="hidden">
+                                    <p class="text-xs font-medium text-gray-700 mb-2" id="cameraNameLabel">Camera</p>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="block text-xs text-gray-600 mb-1">Direction (degrees)</label>
+                                            <input id="cameraDirection" type="number" min="0" max="360" step="15" value="0" class="w-full px-2 py-1 border border-gray-300 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-600 mb-1">Field of View</label>
+                                            <select id="cameraFovEdit" class="w-full px-2 py-1 border border-gray-300 text-sm">
+                                                <option value="60">60°</option>
+                                                <option value="90">90°</option>
+                                                <option value="120">120°</option>
+                                                <option value="180">180°</option>
+                                            </select>
+                                        </div>
+                                        <button id="applyCameraChanges" class="w-full px-3 py-1 bg-blue-600 text-white text-xs hover:bg-blue-700">
+                                            Apply
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="vaultProperties" class="hidden">
+                                    <p class="text-xs font-medium text-gray-700 mb-2">Vault</p>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="block text-xs text-gray-600 mb-1">Width (meters)</label>
+                                            <input id="vaultWidth" type="number" min="0.5" max="5" step="0.25" value="1.5" class="w-full px-2 py-1 border border-gray-300 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-600 mb-1">Height (meters)</label>
+                                            <input id="vaultHeight" type="number" min="0.5" max="5" step="0.25" value="1.5" class="w-full px-2 py-1 border border-gray-300 text-sm">
+                                        </div>
+                                        <button id="applyVaultChanges" class="w-full px-3 py-1 bg-red-600 text-white text-xs hover:bg-red-700">
+                                            Apply
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Legend -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Legend</h4>
+                            <div class="space-y-2 text-xs">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-1 bg-gray-800"></div>
+                                    <span>Walls</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-1 bg-amber-600"></div>
+                                    <span>Doors</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 bg-red-600 rounded"></div>
+                                    <span>Vault</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 bg-blue-600 rounded-full"></div>
+                                    <span>Camera</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 bg-blue-200 rounded-full opacity-50"></div>
+                                    <span>Coverage Area</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Area -->
+                    <div class="flex-1 bg-white border border-gray-200 p-6">
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3 class="text-lg font-medium text-gray-900">Room Layout</h3>
+                            <div class="flex items-center space-x-4 text-sm text-gray-600">
+                                <span>Grid: 1m x 1m</span>
+                                <span id="mouseCoords">X: 0, Y: 0</span>
+                            </div>
+                        </div>
+                        
+                        <div class="border border-gray-300 bg-gray-50 relative overflow-hidden" style="width: 800px; height: 600px;">
+                            <canvas id="roomCanvas" width="800" height="600" class="cursor-crosshair"></canvas>
+                            
+                            <!-- Rulers -->
+                            <div class="absolute top-0 left-0 w-full h-4 bg-white border-b border-gray-300 flex items-center justify-start pl-4">
+                                <div class="flex space-x-16 text-xs text-gray-500">
+                                    <span>0m</span><span>1m</span><span>2m</span><span>3m</span><span>4m</span><span>5m</span><span>6m</span><span>7m</span><span>8m</span><span>9m</span>
+                                </div>
+                            </div>
+                            <div class="absolute top-0 left-0 w-4 h-full bg-white border-r border-gray-300 flex flex-col items-center justify-start pt-8">
+                                <div class="flex flex-col space-y-12 text-xs text-gray-500 transform -rotate-90">
+                                    <span>0m</span><span>1m</span><span>2m</span><span>3m</span><span>4m</span><span>5m</span><span>6m</span><span>7m</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 text-sm text-gray-600">
+                            <p><strong>Instructions:</strong></p>
+                            <ul class="list-disc ml-6 space-y-1">
+                                <li>Select a tool from the left panel</li>
+                                <li>Click and drag to draw walls</li>
+                                <li>Click to place doors and vault</li>
+                                <li>Cameras are automatically loaded from room configuration</li>
+                                <li><strong>Select/Move:</strong> Click to select an element, drag to move, press Delete to remove</li>
+                                <li>Camera coverage areas are shown automatically</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dimensions Modal -->
+    <div id="dimensionsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white w-96 shadow-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Set Room Dimensions</h3>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-700 mb-2">Width (meters)</label>
+                    <input id="modalWidth" type="number" min="2" max="10" step="0.5" value="3" class="w-full px-3 py-2 border border-gray-300">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-700 mb-2">Height (meters)</label>
+                    <input id="modalHeight" type="number" min="2" max="10" step="0.5" value="4" class="w-full px-3 py-2 border border-gray-300">
+                </div>
+                <p class="text-xs text-gray-600">Typical vault room: 3m × 4m. This will create outer walls automatically.</p>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                <button id="cancelDimensions" class="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors duration-200">
+                    Cancel
+                </button>
+                <button id="applyDimensions" class="px-4 py-2 bg-gray-900 text-white hover:bg-gray-800 transition-colors duration-200">
+                    Apply
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        const ROOM_ID = {{ room_id }};
+        let roomData = null;
+        
+        console.log('🎨 Room Designer initialized for room ID:', ROOM_ID);
+        
+        // Display active cameras in the sidebar
+        function displayActiveCameras(cameras) {
+            const camerasList = document.getElementById('activeCamerasList');
+            
+            if (!cameras || cameras.length === 0) {
+                camerasList.innerHTML = '<p class="text-xs text-gray-500">No cameras configured</p>';
+                return;
+            }
+            
+            camerasList.innerHTML = cameras.map(camera => `
+                <div class="flex items-start space-x-2 p-2 bg-gray-50 border border-gray-200 text-xs">
+                    <div class="w-2 h-2 rounded-full ${camera.is_active ? 'bg-green-500' : 'bg-gray-400'} mt-1"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-gray-900 truncate">${camera.name}</div>
+                        <div class="text-gray-500 truncate text-xs">${camera.rtsp_url.substring(0, 30)}...</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            console.log('✅ Displayed', cameras.length, 'cameras in sidebar');
+        }
+        
+        // Load room data on page load
+        async function loadRoomData() {
+            try {
+                console.log('📡 Fetching room data...');
+                const response = await fetch(`/vault-rooms/`);
+                if (!response.ok) throw new Error('Failed to fetch room data');
+                
+                const data = await response.json();
+                roomData = data.vault_rooms.find(room => room.id === ROOM_ID);
+                
+                if (!roomData) {
+                    console.error('❌ Room not found:', ROOM_ID);
+                    alert('Room not found');
+                    return;
+                }
+                
+                console.log('✅ Room data loaded:', roomData);
+                
+                // Populate form fields
+                document.getElementById('roomName').value = roomData.name;
+                document.getElementById('roomLocation').value = roomData.location;
+                const width = roomData.room_width || 3;
+                const height = roomData.room_height || 4;
+                currentRoomWidth = width;
+                currentRoomHeight = height;
+                document.getElementById('roomDimensions').value = `${width} × ${height}`;
+                
+                // Display active cameras list
+                displayActiveCameras(roomData.cameras || []);
+                
+                // Load existing layout if available
+                if (roomData.room_layout) {
+                    console.log('📐 Loading existing layout...');
+                    try {
+                        elements = JSON.parse(roomData.room_layout);
+                        drawElements();
+                        console.log('✅ Layout loaded successfully with', elements.length, 'elements');
+                    } catch (e) {
+                        console.warn('⚠️ Failed to load layout:', e);
+                    }
+                } else {
+                    console.log('ℹ️ No existing layout found, creating default room walls...');
+                    createOuterWalls(width, height);
+                }
+                
+                // Add cameras from the room to the canvas if they don't exist in layout
+                loadCamerasFromRoom();
+                
+            } catch (error) {
+                console.error('❌ Error loading room data:', error);
+                alert('Failed to load room data: ' + error.message);
+            }
+        }
+
+        // Load cameras from room configuration
+        function loadCamerasFromRoom() {
+            if (roomData && roomData.cameras && roomData.cameras.length > 0) {
+                console.log('📹 Loading', roomData.cameras.length, 'cameras from room configuration...');
+                
+                roomData.cameras.forEach((camera, index) => {
+                    // Check if camera already exists in elements
+                    const existingCamera = elements.find(el => 
+                        el.type === 'camera' && el.rtsp === camera.rtsp_url
+                    );
+                    
+                    if (!existingCamera) {
+                        // Add camera to canvas at default position
+                        const spacing = 160; // 2 meters apart (80px per meter)
+                        const startX = 160; // Start 2 meters from left
+                        const startY = 160; // Start 2 meters from top
+                        
+                        elements.push({
+                            type: 'camera',
+                            x: startX + (index * spacing),
+                            y: startY,
+                            name: camera.name,
+                            rtsp: camera.rtsp_url,
+                            fov: 90, // Default field of view
+                            direction: 0 // Default direction
+                        });
+                        console.log('✅ Added camera:', camera.name);
+                    }
+                });
+                
+                drawElements();
+                console.log('✅ All cameras loaded on canvas');
+            }
+        }
+
+        // Canvas and drawing variables
+        const canvas = document.getElementById('roomCanvas');
+        const ctx = canvas.getContext('2d');
+        let currentTool = 'wall';
+        let isDrawing = false;
+        let startPos = null;
+        let elements = [];
+        let selectedElement = null;
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let currentRoomWidth = 3;
+        let currentRoomHeight = 4;
+
+        // Grid settings (80 pixels = 1 meter for better scale)
+        const GRID_SIZE = 80;
+        const METER_TO_PIXEL = 80;
+
+        console.log('🎨 Canvas initialized:', canvas.width, 'x', canvas.height);
+
+        // Set Dimensions Modal
+        document.getElementById('setDimensionsBtn').addEventListener('click', function() {
+            document.getElementById('modalWidth').value = currentRoomWidth;
+            document.getElementById('modalHeight').value = currentRoomHeight;
+            document.getElementById('dimensionsModal').classList.remove('hidden');
+        });
+
+        document.getElementById('cancelDimensions').addEventListener('click', function() {
+            document.getElementById('dimensionsModal').classList.add('hidden');
+        });
+
+        document.getElementById('applyDimensions').addEventListener('click', function() {
+            const width = parseFloat(document.getElementById('modalWidth').value);
+            const height = parseFloat(document.getElementById('modalHeight').value);
+            
+            if (width < 2 || width > 10 || height < 2 || height > 10) {
+                alert('Width and height must be between 2-10 meters');
+                return;
+            }
+            
+            currentRoomWidth = width;
+            currentRoomHeight = height;
+            
+            // Update display
+            document.getElementById('roomDimensions').value = `${width} × ${height}`;
+            
+            // Remove existing outer walls
+            elements = elements.filter(el => el.type !== 'wall' || !el.isOuterWall);
+            
+            // Create outer walls
+            createOuterWalls(width, height);
+            
+            document.getElementById('dimensionsModal').classList.add('hidden');
+            console.log('✅ Room dimensions set to', width, 'x', height);
+        });
+
+        // Create outer walls based on dimensions
+        function createOuterWalls(width, height) {
+            const widthPx = width * METER_TO_PIXEL;
+            const heightPx = height * METER_TO_PIXEL;
+            const margin = 80; // 1 meter margin from edge
+            
+            // Top wall
+            elements.push({
+                type: 'wall',
+                start: { x: margin, y: margin },
+                end: { x: margin + widthPx, y: margin },
+                isOuterWall: true
+            });
+            
+            // Right wall
+            elements.push({
+                type: 'wall',
+                start: { x: margin + widthPx, y: margin },
+                end: { x: margin + widthPx, y: margin + heightPx },
+                isOuterWall: true
+            });
+            
+            // Bottom wall
+            elements.push({
+                type: 'wall',
+                start: { x: margin + widthPx, y: margin + heightPx },
+                end: { x: margin, y: margin + heightPx },
+                isOuterWall: true
+            });
+            
+            // Left wall
+            elements.push({
+                type: 'wall',
+                start: { x: margin, y: margin + heightPx },
+                end: { x: margin, y: margin },
+                isOuterWall: true
+            });
+            
+            drawElements();
+            console.log('✅ Created outer walls for', width, 'x', height, 'room');
+        }
+
+        // Initialize canvas
+        function initCanvas() {
+            console.log('🖌️ Initializing canvas...');
+            drawGrid();
+        }
+
+        // Draw grid
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.lineWidth = 1;
+
+            // Vertical lines
+            for (let x = 0; x <= canvas.width; x += GRID_SIZE) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            // Horizontal lines
+            for (let y = 0; y <= canvas.height; y += GRID_SIZE) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // Snap to grid
+        function snapToGrid(pos) {
+            return {
+                x: Math.round(pos.x / GRID_SIZE) * GRID_SIZE,
+                y: Math.round(pos.y / GRID_SIZE) * GRID_SIZE
+            };
+        }
+
+        // Get mouse position relative to canvas
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        // Tool selection
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tool-btn').forEach(b => {
+                    b.classList.remove('active', 'bg-gray-900', 'text-white');
+                    b.classList.add('bg-white', 'text-gray-700');
+                });
+                this.classList.add('active', 'bg-gray-900', 'text-white');
+                this.classList.remove('bg-white', 'text-gray-700');
+                
+                const toolMap = {
+                    'wallTool': 'wall',
+                    'doorTool': 'door',
+                    'vaultTool': 'vault',
+                    'selectTool': 'select'
+                };
+                
+                currentTool = toolMap[this.id];
+                canvas.style.cursor = currentTool === 'select' ? 'pointer' : 'crosshair';
+                console.log('🔧 Tool selected:', currentTool);
+            });
+        });
+
+        // Mouse events
+        canvas.addEventListener('mousedown', function(e) {
+            const pos = snapToGrid(getMousePos(e));
+            console.log('🖱️ Mouse down at:', pos, 'Tool:', currentTool);
+            
+            if (currentTool === 'select') {
+                // Find element at position
+                selectedElement = findElementAt(pos);
+                if (selectedElement) {
+                    isDragging = true;
+                    // Calculate offset from element position
+                    if (selectedElement.type === 'camera' || selectedElement.type === 'door') {
+                        dragOffset.x = pos.x - selectedElement.x;
+                        dragOffset.y = pos.y - selectedElement.y;
+                    } else if (selectedElement.type === 'vault') {
+                        dragOffset.x = pos.x - selectedElement.x;
+                        dragOffset.y = pos.y - selectedElement.y;
+                    }
+                    console.log('✅ Selected element:', selectedElement.type);
+                    showElementProperties(selectedElement);
+                    canvas.style.cursor = 'grabbing';
+                } else {
+                    hideElementProperties();
+                }
+            } else if (currentTool === 'wall') {
+                isDrawing = true;
+                startPos = pos;
+            } else if (currentTool === 'door') {
+                addDoor(pos);
+            } else if (currentTool === 'vault') {
+                addVault(pos);
+            }
+        });
+
+        canvas.addEventListener('mousemove', function(e) {
+            const pos = getMousePos(e);
+            const snappedPos = snapToGrid(pos);
+            
+            // Update coordinates display
+            document.getElementById('mouseCoords').textContent = 
+                `X: ${(snappedPos.x / METER_TO_PIXEL).toFixed(1)}m, Y: ${(snappedPos.y / METER_TO_PIXEL).toFixed(1)}m`;
+            
+            if (currentTool === 'select' && isDragging && selectedElement) {
+                // Move the selected element
+                if (selectedElement.type === 'camera' || selectedElement.type === 'door') {
+                    selectedElement.x = snappedPos.x - dragOffset.x;
+                    selectedElement.y = snappedPos.y - dragOffset.y;
+                } else if (selectedElement.type === 'vault') {
+                    selectedElement.x = snappedPos.x - dragOffset.x;
+                    selectedElement.y = snappedPos.y - dragOffset.y;
+                }
+                drawElements();
+            } else if (isDrawing && currentTool === 'wall') {
+                drawElements();
+                drawPreviewWall(startPos, snappedPos);
+            } else if (currentTool === 'select') {
+                // Update cursor based on hover
+                const hoveredElement = findElementAt(snappedPos);
+                canvas.style.cursor = hoveredElement ? 'grab' : 'pointer';
+            }
+        });
+
+        canvas.addEventListener('mouseup', function(e) {
+            if (isDragging && currentTool === 'select') {
+                isDragging = false;
+                canvas.style.cursor = 'pointer';
+                console.log('✅ Element moved to new position');
+            } else if (isDrawing && currentTool === 'wall') {
+                const pos = snapToGrid(getMousePos(e));
+                addWall(startPos, pos);
+                isDrawing = false;
+                startPos = null;
+            }
+        });
+
+        // Find element at mouse position
+        function findElementAt(pos) {
+            // Check in reverse order (top to bottom)
+            for (let i = elements.length - 1; i >= 0; i--) {
+                const element = elements[i];
+                
+                if (element.type === 'camera') {
+                    const distance = Math.sqrt(
+                        Math.pow(pos.x - element.x, 2) + 
+                        Math.pow(pos.y - element.y, 2)
+                    );
+                    if (distance <= 30) return element; // 30px click radius for larger cameras
+                }
+                
+                if (element.type === 'door') {
+                    if (pos.x >= element.x - element.width/2 && 
+                        pos.x <= element.x + element.width/2 &&
+                        pos.y >= element.y - element.height/2 && 
+                        pos.y <= element.y + element.height/2) {
+                        return element;
+                    }
+                }
+                
+                if (element.type === 'vault') {
+                    if (pos.x >= element.x && 
+                        pos.x <= element.x + element.width &&
+                        pos.y >= element.y && 
+                        pos.y <= element.y + element.height) {
+                        return element;
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        // Show/Hide element properties
+        function showElementProperties(element) {
+            const propertiesPanel = document.getElementById('elementProperties');
+            const cameraProps = document.getElementById('cameraProperties');
+            const vaultProps = document.getElementById('vaultProperties');
+            
+            // Hide all property panels first
+            cameraProps.classList.add('hidden');
+            vaultProps.classList.add('hidden');
+            
+            if (element.type === 'camera') {
+                document.getElementById('cameraNameLabel').textContent = element.name;
+                document.getElementById('cameraDirection').value = element.direction || 0;
+                document.getElementById('cameraFovEdit').value = element.fov || 90;
+                cameraProps.classList.remove('hidden');
+                propertiesPanel.classList.remove('hidden');
+            } else if (element.type === 'vault') {
+                const widthMeters = (element.width / METER_TO_PIXEL).toFixed(2);
+                const heightMeters = (element.height / METER_TO_PIXEL).toFixed(2);
+                document.getElementById('vaultWidth').value = widthMeters;
+                document.getElementById('vaultHeight').value = heightMeters;
+                vaultProps.classList.remove('hidden');
+                propertiesPanel.classList.remove('hidden');
+            } else {
+                propertiesPanel.classList.add('hidden');
+            }
+        }
+        
+        function hideElementProperties() {
+            document.getElementById('elementProperties').classList.add('hidden');
+        }
+
+        // Apply camera changes
+        document.getElementById('applyCameraChanges').addEventListener('click', function() {
+            if (selectedElement && selectedElement.type === 'camera') {
+                selectedElement.direction = parseInt(document.getElementById('cameraDirection').value);
+                selectedElement.fov = parseInt(document.getElementById('cameraFovEdit').value);
+                drawElements();
+                console.log('✅ Camera updated:', selectedElement.name, 'Direction:', selectedElement.direction, 'FOV:', selectedElement.fov);
+            }
+        });
+
+        // Apply vault changes
+        document.getElementById('applyVaultChanges').addEventListener('click', function() {
+            if (selectedElement && selectedElement.type === 'vault') {
+                const widthMeters = parseFloat(document.getElementById('vaultWidth').value);
+                const heightMeters = parseFloat(document.getElementById('vaultHeight').value);
+                
+                if (widthMeters < 0.5 || widthMeters > 5 || heightMeters < 0.5 || heightMeters > 5) {
+                    alert('Vault dimensions must be between 0.5 and 5 meters');
+                    return;
+                }
+                
+                selectedElement.width = widthMeters * METER_TO_PIXEL;
+                selectedElement.height = heightMeters * METER_TO_PIXEL;
+                drawElements();
+                console.log('✅ Vault resized:', widthMeters, 'x', heightMeters, 'meters');
+            }
+        });
+
+        // Add elements
+        function addWall(start, end) {
+            if (Math.abs(start.x - end.x) > 5 || Math.abs(start.y - end.y) > 5) {
+                elements.push({
+                    type: 'wall',
+                    start: start,
+                    end: end
+                });
+                console.log('🧱 Wall added:', start, 'to', end);
+                drawElements();
+            }
+        }
+
+        function addDoor(pos) {
+            elements.push({
+                type: 'door',
+                x: pos.x,
+                y: pos.y,
+                width: GRID_SIZE * 1, // 1 meter wide door
+                height: GRID_SIZE / 8
+            });
+            console.log('🚪 Door added at:', pos);
+            drawElements();
+        }
+
+        function addVault(pos) {
+            elements = elements.filter(el => el.type !== 'vault');
+            elements.push({
+                type: 'vault',
+                x: pos.x - GRID_SIZE * 0.75,
+                y: pos.y - GRID_SIZE * 0.75,
+                width: GRID_SIZE * 1.5, // 1.5m x 1.5m vault
+                height: GRID_SIZE * 1.5
+            });
+            console.log('🔒 Vault added at:', pos);
+            drawElements();
+        }
+
+        function addCamera(pos) {
+            const name = document.getElementById('cameraName').value || `Camera ${elements.filter(el => el.type === 'camera').length + 1}`;
+            const rtsp = document.getElementById('cameraRtsp').value;
+            const fov = parseInt(document.getElementById('cameraFov').value);
+            
+            elements.push({
+                type: 'camera',
+                x: pos.x,
+                y: pos.y,
+                name: name,
+                rtsp: rtsp,
+                fov: fov,
+                direction: 0
+            });
+            console.log('📹 Camera added:', name, 'at:', pos);
+            drawElements();
+        }
+
+        // Draw preview wall while dragging
+        function drawPreviewWall(start, end) {
+            ctx.strokeStyle = '#6b7280';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Draw all elements
+        function drawElements() {
+            // Clear and redraw grid
+            drawGrid();
+            
+            elements.forEach(element => {
+                switch(element.type) {
+                    case 'wall':
+                        drawWall(element);
+                        break;
+                    case 'door':
+                        drawDoor(element);
+                        break;
+                    case 'vault':
+                        drawVault(element);
+                        break;
+                    case 'camera':
+                        drawCamera(element);
+                        break;
+                }
+                
+                // Draw selection highlight
+                if (selectedElement === element && currentTool === 'select') {
+                    drawSelectionHighlight(element);
+                }
+            });
+            
+            console.log('🎨 Drew', elements.length, 'elements');
+        }
+
+        // Draw selection highlight
+        function drawSelectionHighlight(element) {
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            
+            if (element.type === 'camera') {
+                ctx.beginPath();
+                ctx.arc(element.x, element.y, 20, 0, 2 * Math.PI);
+                ctx.stroke();
+            } else if (element.type === 'door') {
+                ctx.strokeRect(
+                    element.x - element.width/2 - 5,
+                    element.y - element.height/2 - 5,
+                    element.width + 10,
+                    element.height + 10
+                );
+            } else if (element.type === 'vault') {
+                ctx.strokeRect(
+                    element.x - 5,
+                    element.y - 5,
+                    element.width + 10,
+                    element.height + 10
+                );
+            }
+            
+            ctx.setLineDash([]);
+        }
+
+        function drawWall(wall) {
+            ctx.strokeStyle = '#1f2937';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(wall.start.x, wall.start.y);
+            ctx.lineTo(wall.end.x, wall.end.y);
+            ctx.stroke();
+        }
+
+        function drawDoor(door) {
+            ctx.fillStyle = '#d97706';
+            ctx.fillRect(door.x - door.width/2, door.y - door.height/2, door.width, door.height);
+            
+            ctx.fillStyle = '#92400e';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('DOOR', door.x, door.y + 20);
+        }
+
+        function drawVault(vault) {
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(vault.x, vault.y, vault.width, vault.height);
+            
+            ctx.strokeStyle = '#991b1b';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(vault.x, vault.y, vault.width, vault.height);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('VAULT', vault.x + vault.width/2, vault.y + vault.height/2 + 5);
+        }
+
+        function drawCamera(camera) {
+            // Camera coverage area (3 meters range for small rooms)
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+            ctx.beginPath();
+            const range = GRID_SIZE * 3; // 3 meter range
+            const startAngle = (camera.direction - camera.fov/2) * Math.PI / 180;
+            const endAngle = (camera.direction + camera.fov/2) * Math.PI / 180;
+            ctx.arc(camera.x, camera.y, range, startAngle, endAngle);
+            ctx.lineTo(camera.x, camera.y);
+            ctx.fill();
+            
+            // Camera body (larger for better visibility)
+            ctx.fillStyle = '#2563eb';
+            ctx.beginPath();
+            ctx.arc(camera.x, camera.y, 12, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Camera direction indicator
+            ctx.strokeStyle = '#2563eb';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(camera.x, camera.y);
+            const dirX = camera.x + Math.cos(camera.direction * Math.PI / 180) * 30;
+            const dirY = camera.y + Math.sin(camera.direction * Math.PI / 180) * 30;
+            ctx.lineTo(dirX, dirY);
+            ctx.stroke();
+            
+            // Camera label
+            ctx.fillStyle = '#1e40af';
+            ctx.font = '13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(camera.name, camera.x, camera.y - 20);
+        }
+
+        // Clear canvas
+        document.getElementById('clearCanvas').addEventListener('click', function() {
+            if (confirm('Are you sure you want to clear the entire layout? The room will reset to default walls and cameras.')) {
+                console.log('🗑️ Clearing canvas...');
+                elements = [];
+                selectedElement = null;
+                hideElementProperties();
+                
+                // Recreate outer walls
+                createOuterWalls(currentRoomWidth, currentRoomHeight);
+                
+                // Reload cameras from room configuration
+                loadCamerasFromRoom();
+                
+                console.log('✅ Canvas reset to default state');
+            }
+        });
+
+        // Keyboard support for deleting elements
+        document.addEventListener('keydown', function(e) {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement && currentTool === 'select') {
+                e.preventDefault();
+                const index = elements.indexOf(selectedElement);
+                if (index > -1) {
+                    console.log('🗑️ Deleting element:', selectedElement.type);
+                    elements.splice(index, 1);
+                    selectedElement = null;
+                    hideElementProperties();
+                    drawElements();
+                }
+            }
+        });
+
+        // Save layout
+        document.getElementById('saveLayout').addEventListener('click', async function() {
+            if (!roomData) {
+                alert('Room data not loaded yet. Please wait.');
+                return;
+            }
+            
+            console.log('💾 Saving layout...');
+            console.log('Room ID:', ROOM_ID);
+            console.log('Room Dimensions:', currentRoomWidth, 'x', currentRoomHeight);
+            console.log('Elements:', elements);
+            
+            try {
+                const formData = new FormData();
+                formData.append('room_id', ROOM_ID);
+                formData.append('name', roomData.name);
+                formData.append('location', roomData.location);
+                formData.append('width', currentRoomWidth);
+                formData.append('height', currentRoomHeight);
+                formData.append('layout_data', JSON.stringify(elements));
+                
+                const response = await fetch('/vault-rooms/save-layout', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Layout saved successfully:', result);
+                    alert('Room layout saved successfully!');
+                } else {
+                    const error = await response.json();
+                    console.error('❌ Save failed:', error);
+                    alert('Error saving layout: ' + error.detail);
+                }
+            } catch (error) {
+                console.error('❌ Save error:', error);
+                alert('Error saving layout: ' + error.message);
+            }
+        });
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🚀 Page loaded, initializing...');
+            initCanvas();
+            loadRoomData();
+        });
+    </script>
+</body>
+</html>

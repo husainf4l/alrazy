@@ -143,7 +143,6 @@ class CameraProcessor:
                     if self.use_tracking and self.tracking_service:
                         # Determine if we should run YOLO (15 FPS) or just ByteTrack (30 FPS)
                         run_yolo = (current_time - self.last_yolo_time >= self.yolo_interval)
-                        run_deepsort = (current_time - self.last_deepsort_time >= self.deepsort_interval)
                         
                         if run_yolo:
                             # Run YOLO detection at 15 FPS
@@ -154,14 +153,11 @@ class CameraProcessor:
                             # Use cached detections for ByteTrack interpolation at 30 FPS
                             detections_sv = self.last_detections
                         
-                        # Track people (ByteTrack runs at 30 FPS, DeepSORT at 2 FPS)
+                        # Track people (ByteTrack runs at 30 FPS)
                         if detections_sv is not None and len(detections_sv) > 0:
                             tracking_result = self.tracking_service.track_people(
-                                self.camera_id, frame, detections_sv, run_deepsort
+                                self.camera_id, frame, detections_sv
                             )
-                            
-                            if run_deepsort:
-                                self.last_deepsort_time = current_time
                             
                             # Store tracking data for WebSocket
                             camera_state = self.tracking_service.camera_tracks.get(self.camera_id, {})
@@ -183,7 +179,7 @@ class CameraProcessor:
                             # Update last process time
                             self.last_process_time = current_time
                             
-                            logger.debug(f"Camera {self.camera_id}: {person_count} people tracked (YOLO: {run_yolo}, DeepSORT: {run_deepsort})")
+                            logger.debug(f"Camera {self.camera_id}: {person_count} people tracked (YOLO: {run_yolo})")
                         else:
                             # No detections yet, continue to next frame
                             continue
