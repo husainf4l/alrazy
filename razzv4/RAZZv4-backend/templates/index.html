@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sf': ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white font-sf min-h-screen text-gray-900">
+    <!-- Hero Section -->
+    <div class="min-h-screen flex flex-col justify-center items-center px-6 lg:px-8">
+        <!-- Main Header -->
+        <div class="text-center mb-24">
+            <h1 class="text-6xl sm:text-8xl font-extralight text-gray-900 mb-10 leading-tight tracking-tight">
+                Live People-Count
+                <span class="font-light text-gray-700 block mt-3">
+                    & Alerts
+                </span>
+            </h1>
+            <p class="text-xl font-light text-gray-600 mb-12 max-w-3xl mx-auto leading-relaxed">
+                Watch how our system detects entries, maintains persistent tracks, and raises instant alerts for unusual headcount changes.
+            </p>
+            <div class="flex flex-wrap justify-center gap-6">
+                <a href="/get-started" class="bg-gray-900 hover:bg-gray-800 text-white px-12 py-4 font-medium transition-colors duration-300">
+                    Get Started
+                </a>
+                <a href="/login" class="border border-gray-300 hover:bg-gray-50 text-gray-900 px-12 py-4 font-medium transition-colors duration-300">
+                    Login
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

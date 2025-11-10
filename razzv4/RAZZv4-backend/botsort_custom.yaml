@@ -1,0 +1,19 @@
+# Custom BoT-SORT config for RAZZv4 - Banking security tracking
+# Optimized to reduce false duplicate person detections
+
+tracker_type: botsort
+track_high_thresh: 0.5  # Increased from 0.25 - Only high-confidence detections start tracks
+track_low_thresh: 0.2   # Increased from 0.1 - More conservative low-conf matching
+new_track_thresh: 0.6   # Increased from 0.25 - Harder to create new track IDs (reduces duplicates)
+track_buffer: 60        # Increased from 30 - Keep tracks alive longer during occlusions
+match_thresh: 0.6       # Decreased from 0.8 - Easier to match same person (reduces ID switches)
+fuse_score: True
+
+# BoT-SORT specifics
+gmc_method: sparseOptFlow
+
+# ReID configuration
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto

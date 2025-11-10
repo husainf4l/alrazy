@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Brinks V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        
+        /* Dark theme overrides */
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+        }
+        
+        /* Room cards dark theme */
+        .room-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            backdrop-filter: blur(20px);
+        }
+        
+        .room-card:hover {
+            border-color: rgba(96, 165, 250, 0.5);
+            transform: translateY(-4px);
+        }
+        
+        /* Stats cards */
+        .stat-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            backdrop-filter: blur(20px);
+        }
+        
+        .stat-card:hover {
+            border-color: rgba(71, 85, 105, 0.8);
+        }
+        
+        /* Glass effect for controls */
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            backdrop-filter: blur(20px);
+        }
+        
+        /* Modal dark theme */
+        .dark-modal {
+            background: #1e293b;
+            border: 1px solid #334155;
+        }
+        
+        /* People list items */
+        .person-card {
+            background: rgba(51, 65, 85, 0.3);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+        }
+        
+        .person-card:hover {
+            background: rgba(51, 65, 85, 0.5);
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 antialiased min-h-screen">
+    <!-- Navigation Bar Component -->
+    {% include 'navbar.html' %}
+
+    <!-- Main Content -->
+    <div class="w-full px-3 py-3">
+        <!-- Header - Compact -->
+        <div class="mb-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">Security Dashboard</h1>
+                    <p class="text-sm text-gray-400">Real-time monitoring across all rooms</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="refreshBtn" class="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-all">
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Refresh
+                    </button>
+                    <div class="flex items-center space-x-2 bg-green-500/20 px-3 py-2 rounded-lg border border-green-500/30">
+                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                        <span class="text-xs font-semibold text-green-400 uppercase tracking-wide">Live</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid - Corporate Style -->
+                <!-- Stats Grid - Single Row Compact -->
+        <div class="grid grid-cols-4 gap-3 mb-4">
+            <div class="stat-card rounded-lg p-3 shadow-xl">
+                <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Rooms</p>
+                <p class="text-xl font-semibold text-white" id="totalCameras">4</p>
+            </div>
+            <div class="stat-card rounded-lg p-3 shadow-xl">
+                <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Active</p>
+                <p class="text-xl font-semibold text-white" id="activeCameras">-</p>
+            </div>
+            <div class="stat-card rounded-lg p-3 shadow-xl">
+                <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">People</p>
+                <div class="flex items-center space-x-2">
+                    <p class="text-xl font-semibold text-white" id="totalPeople">-</p>
+                    <button onclick="openPeopleModal()" class="text-blue-400 hover:text-blue-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="stat-card rounded-lg p-3 shadow-xl">
+                <p class="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">AI Status</p>
+                <p class="text-base font-semibold text-green-400" id="detectionStatus">Active</p>
+            </div>
+        </div>
+
+        <!-- Controls - Corporate Style -->
+        <div class="glass-panel rounded-xl p-3 mb-4 shadow-xl">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center space-x-2">
+                    <button id="refreshBtn" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-all duration-200 flex items-center space-x-2 font-medium shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span class="text-sm">Refresh</span>
+                    </button>
+                    <button id="managePeopleBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all duration-200 flex items-center space-x-2 font-medium shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-sm">Manage People</span>
+                    </button>
+                    <div class="flex items-center space-x-2 bg-green-500/20 px-3 py-2 rounded-lg border border-green-500/30">
+                        <div class="h-1.5 w-1.5 bg-green-500 rounded-full"></div>
+                        <span class="text-xs font-semibold text-green-400 uppercase tracking-wide">Live HD</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs text-gray-400 font-semibold mr-1 uppercase tracking-wide">View</span>
+                    <button id="gridView2x2" class="p-2 bg-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-700 transition-all">
+                        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M3 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm8-8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
+                        </svg>
+                    </button>
+                    <button id="gridView1x4" class="p-2 bg-gray-700 border-2 border-gray-700 rounded-lg hover:bg-gray-600 transition-all">
+                        <svg class="w-4 h-4 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- People Management Modal -->
+        <div id="peopleModal" class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center z-50 backdrop-blur-sm">
+            <div class="dark-modal rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl font-bold text-white">Tracked People</h2>
+                        <button onclick="closePeopleModal()" class="text-gray-400 hover:text-gray-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="peopleList" class="p-6 overflow-y-auto max-h-[60vh]">
+                    <!-- People list will be loaded here -->
+                    <div class="text-center text-gray-400 py-8">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Room Grid - 2x2 Same Size -->
+        <div id="cameraGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Rooms will be loaded here -->
+            <div class="col-span-full flex items-center justify-center p-16">
+                <div class="text-center">
+                    <div class="relative mx-auto mb-4" style="width: 48px; height: 48px;">
+                        <div class="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+                        <div class="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+                    </div>
+                    <p class="text-gray-500 font-medium">Loading rooms...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Apple-style smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Enable scrolling */
+        html, body {
+            height: 100%;
+            overflow: auto;
+        }
+
+        /* Room container with fixed aspect ratio - same size for all */
+        .camera-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio - standard for all cameras */
+            background: linear-gradient(145deg, #0f0f0f 0%, #1a1a1a 50%, #0f0f0f 100%);
+            overflow: hidden;
+            border-radius: 12px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .camera-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 12px;
+        }
+
+        /* Enhanced badge animations */
+        @keyframes pulse-glow {
+            0%, 100% {
+                opacity: 1;
+                box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+            }
+            50% {
+                opacity: 0.8;
+                box-shadow: 0 0 16px rgba(255, 255, 255, 0.5);
+            }
+        }
+
+        .room-card:hover .camera-container {
+            transform: scale(1.01);
+            transition: transform 0.3s ease;
+        }
+
+        /* Smooth transitions */
+        #cameraGrid {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Grid layout variants */
+        .grid-2x2 {
+            grid-template-columns: repeat(1, 1fr);
+        }
+        
+        @media (min-width: 1024px) {
+            .grid-2x2 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .grid-1x4 {
+            grid-template-columns: repeat(1, 1fr);
+        }
+
+        /* Glassmorphism effect */
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+
+        /* Hover effects */
+        .room-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .room-card:hover {
+            transform: translateY(-4px);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+    </style>
+
+    <script>
+        // Use relative URLs to work with current domain
+        const API_URL = window.location.origin;
+        
+        // Use proxied WebRTC connection through nginx
+        const WEBRTC_URL = `${window.location.protocol}//${window.location.host}/webrtc`;
+            
+        let cameras = [];
+        let peerConnections = {};
+
+        // Load cameras from database
+        async function loadCameras() {
+            try {
+                const response = await fetch(`${API_URL}/cameras/`);
+                cameras = await response.json();
+                
+                document.getElementById('totalCameras').textContent = cameras.length;
+                document.getElementById('activeCameras').textContent = cameras.length;
+                
+                renderCameras();
+            } catch (error) {
+                console.error('Error loading cameras:', error);
+                document.getElementById('cameraGrid').innerHTML = `
+                    <div class="col-span-full text-center p-12">
+                        <p class="text-red-500">Error loading cameras. Please check the connection.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Start WebRTC stream for a camera
+        async function startWebRTCStream(cameraId, streamId, videoElement) {
+            try {
+                const stream = new MediaStream();
+                const pc = new RTCPeerConnection({
+                    iceServers: [{
+                        urls: 'stun:stun.l.google.com:19302'
+                    }]
+                });
+
+                pc.ontrack = (event) => {
+                    console.log(`Received track for camera ${cameraId}`);
+                    stream.addTrack(event.track);
+                    videoElement.srcObject = stream;
+                    videoElement.play();
+                    
+                    // Update status indicator
+                    updateConnectionStatus(cameraId, 'connected');
+                };
+
+                pc.oniceconnectionstatechange = () => {
+                    console.log(`ICE Connection State for camera ${cameraId}: ${pc.iceConnectionState}`);
+                    
+                    // Update status based on connection state
+                    switch(pc.iceConnectionState) {
+                        case 'connected':
+                        case 'completed':
+                            updateConnectionStatus(cameraId, 'connected');
+                            break;
+                        case 'disconnected':
+                            updateConnectionStatus(cameraId, 'disconnected');
+                            break;
+                        case 'failed':
+                            updateConnectionStatus(cameraId, 'failed');
+                            break;
+                        case 'checking':
+                        case 'new':
+                            updateConnectionStatus(cameraId, 'connecting');
+                            break;
+                    }
+                };
+
+                // Get codec info first
+                const codecResponse = await fetch(`${WEBRTC_URL}/stream/codec/${streamId}`);
+                if (!codecResponse.ok) {
+                    throw new Error(`Failed to get codec info: ${codecResponse.status}`);
+                }
+                
+                const codecs = await codecResponse.json();
+                console.log(`Codecs for ${streamId}:`, codecs);
+                
+                // Add transceivers based on codec info
+                codecs.forEach(codec => {
+                    pc.addTransceiver(codec.Type, {
+                        direction: 'sendrecv'
+                    });
+                });
+
+                // Create offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Send offer to WebRTC server
+                const response = await fetch(`${WEBRTC_URL}/stream/receiver/${streamId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    },
+                    body: new URLSearchParams({
+                        suuid: streamId,
+                        data: btoa(pc.localDescription.sdp)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`WebRTC server responded with ${response.status}`);
+                }
+
+                const answerSdp = await response.text();
+                const answer = {
+                    type: 'answer',
+                    sdp: atob(answerSdp)
+                };
+                
+                await pc.setRemoteDescription(answer);
+                console.log(`WebRTC connection established for camera ${cameraId}`);
+
+                peerConnections[cameraId] = pc;
+
+            } catch (error) {
+                console.error(`Error starting WebRTC for camera ${cameraId}:`, error);
+                videoElement.parentElement.innerHTML = `
+                    <div class="flex items-center justify-center h-full bg-gray-800">
+                        <div class="text-center text-white">
+                            <svg class="w-12 h-12 mx-auto mb-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p class="text-sm">Stream unavailable</p>
+                            <p class="text-xs mt-1">${error.message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Render cameras with Apple-style modern design
+        function renderCameras() {
+            const grid = document.getElementById('cameraGrid');
+            
+            // Close existing peer connections
+            Object.values(peerConnections).forEach(pc => pc.close());
+            peerConnections = {};
+            
+            if (cameras.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center p-16">
+                        <div class="bg-white/60 backdrop-blur-xl rounded-3xl p-12 shadow-sm border border-gray-200/50 inline-block">
+                            <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <p class="text-gray-500 font-medium mb-3">No rooms found</p>
+                            <a href="/cameras-page" class="text-blue-600 hover:text-blue-700 font-medium text-sm">Add rooms to get started →</a>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            const roomNames = ['Room 1', 'Room 2', 'Room 3', 'Room 4'];
+
+            grid.innerHTML = cameras.map((camera, index) => {
+                const streamId = `camera${index + 1}`;
+                const roomName = roomNames[index] || `Room ${index + 1}`;
+                
+                return `
+                    <div class="room-card rounded-xl shadow-xl overflow-hidden hover:shadow-2xl transition-all duration-300">
+                        <!-- Video Container with Minimal Overlay -->
+                        <div class="camera-container">
+                            <!-- Live Video with AI Tracking -->
+                            <img id="video-${camera.id}" 
+                                 class="camera-video" 
+                                 src="${API_URL}/visualization/camera/${camera.id}/stream?fps=15"
+                                 alt="${roomName}">
+                            </img>
+                            
+                            <!-- Top Bar - Minimal & Clean -->
+                            <div class="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/60 to-transparent z-10">
+                                <div class="flex items-center justify-between">
+                                    <!-- Left: Room Name & Live -->
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-white text-sm font-semibold drop-shadow-lg">${roomName}</span>
+                                        <div class="flex items-center space-x-1 bg-red-600/90 px-2 py-0.5 rounded backdrop-blur-sm">
+                                            <div class="h-1.5 w-1.5 bg-white rounded-full animate-pulse"></div>
+                                            <span class="text-white text-xs font-bold tracking-wide">LIVE</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Right: Fullscreen -->
+                                    <button onclick="toggleFullscreen(${camera.id})" 
+                                            class="bg-black/30 hover:bg-black/50 p-1.5 rounded backdrop-blur-sm transition-all">
+                                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Loading State - Clean -->
+                            <div id="loading-${camera.id}" class="absolute inset-0 flex items-center justify-center bg-gray-900 z-20">
+                                <div class="text-center text-white">
+                                    <div class="relative mx-auto mb-3" style="width: 48px; height: 48px;">
+                                        <div class="absolute inset-0 rounded-full border-3 border-white/20"></div>
+                                        <div class="absolute inset-0 rounded-full border-3 border-white border-t-transparent animate-spin"></div>
+                                    </div>
+                                    <p class="text-sm font-medium opacity-90">${roomName}</p>
+                                    <p class="text-xs text-gray-400 mt-1">Connecting...</p>
+                                </div>
+                            </div>
+
+                            <!-- Bottom Bar - Minimal Info -->
+                            <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent z-10">
+                                <div class="flex items-center justify-between text-white text-xs">
+                                    <!-- Left: Location & Stream ID -->
+                                    <div class="flex items-center space-x-3">
+                                        <div class="flex items-center space-x-1">
+                                            <svg class="w-3 h-3 opacity-80" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <span class="font-medium drop-shadow">${camera.location}</span>
+                                        </div>
+                                        <span class="opacity-60">•</span>
+                                        <span class="font-mono opacity-80 drop-shadow">${streamId}</span>
+                                    </div>
+                                    
+                                    <!-- Right: People Count -->
+                                    <div class="flex items-center space-x-1.5 bg-white/20 backdrop-blur-sm px-2 py-1 rounded">
+                                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"></path>
+                                        </svg>
+                                        <span id="people-count-${camera.id}" class="font-bold drop-shadow-lg">
+                                            <span class="animate-pulse">...</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Initialize camera streams with tracking visualization
+            setTimeout(() => {
+                cameras.forEach((camera, index) => {
+                    const streamId = `camera${index + 1}`;
+                    const imgElement = document.getElementById(`video-${camera.id}`);
+                    const loadingElement = document.getElementById(`loading-${camera.id}`);
+                    
+                    if (imgElement && loadingElement) {
+                        // Hide loading after a short delay (MJPEG streams start immediately)
+                        setTimeout(() => {
+                            loadingElement.style.display = 'none';
+                            updateConnectionStatus(camera.id, 'connected');
+                        }, 2000);
+                        
+                        // Handle errors
+                        imgElement.onerror = () => {
+                            loadingElement.innerHTML = `
+                                <div class="text-center text-white">
+                                    <svg class="w-16 h-16 mx-auto mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <p class="text-sm font-medium mb-2">Stream unavailable</p>
+                                    <button onclick="location.reload()" class="mt-3 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl text-sm font-medium transition-all">
+                                        Retry Connection
+                                    </button>
+                                </div>
+                            `;
+                            updateConnectionStatus(camera.id, 'failed');
+                        };
+                    }
+                });
+            }, 500);
+        }
+
+        // Toggle fullscreen
+        function toggleFullscreen(cameraId) {
+            const imgElement = document.getElementById(`video-${cameraId}`);
+            if (!imgElement) return;
+            
+            const container = imgElement.parentElement;
+            if (!document.fullscreenElement) {
+                container.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Update connection status indicator
+        function updateConnectionStatus(cameraId, status) {
+            const statusElement = document.getElementById(`status-${cameraId}`);
+            const indicatorElement = document.getElementById(`status-indicator-${cameraId}`);
+            const textElement = document.getElementById(`status-text-${cameraId}`);
+            
+            if (!statusElement || !indicatorElement || !textElement) return;
+            
+            statusElement.classList.remove('hidden');
+            
+            switch(status) {
+                case 'connected':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-green-500 animate-pulse';
+                    textElement.textContent = 'Connected';
+                    setTimeout(() => statusElement.classList.add('hidden'), 3000);
+                    break;
+                case 'connecting':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-yellow-500 animate-pulse';
+                    textElement.textContent = 'Connecting';
+                    break;
+                case 'disconnected':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-orange-500';
+                    textElement.textContent = 'Disconnected';
+                    break;
+                case 'failed':
+                    indicatorElement.className = 'h-2 w-2 rounded-full bg-red-500';
+                    textElement.textContent = 'Failed';
+                    break;
+            }
+        }
+
+        // Fetch and update people detection counts
+        async function updatePeopleCounts() {
+            try {
+                // Get per-camera stats
+                const response = await fetch(`${API_URL}/detections/live`);
+                if (!response.ok) return;
+                
+                const stats = await response.json();
+                
+                // Update detection status
+                document.getElementById('detectionStatus').textContent = 'Active';
+                document.getElementById('detectionStatus').className = 'text-base font-semibold text-green-600';
+                
+                // Update individual camera counts
+                stats.forEach(stat => {
+                    const countElement = document.getElementById(`people-count-${stat.camera_id}`);
+                    if (countElement) {
+                        countElement.innerHTML = `
+                            <span class="text-lg">${stat.current_count}</span>
+                        `;
+                    }
+                });
+                
+                // Get unique people count from rooms (deduplicated across cameras)
+                let totalUniquePeople = 0;
+                try {
+                    // Get all rooms and their unique counts
+                    const roomsResponse = await fetch(`${API_URL}/api/rooms/`);
+                    if (roomsResponse.ok) {
+                        const rooms = await roomsResponse.json();
+                        for (const room of rooms) {
+                            try {
+                                const countResponse = await fetch(`${API_URL}/api/rooms/${room.id}/person-count`);
+                                if (countResponse.ok) {
+                                    const countData = await countResponse.json();
+                                    // Use unique_person_count from global tracker
+                                    totalUniquePeople += countData.unique_person_count || 0;
+                                }
+                            } catch (e) {
+                                // If room endpoint fails, fallback to camera sum
+                                console.warn(`Room ${room.id} count failed, using camera counts`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Fallback: sum camera counts (may double-count)
+                    totalUniquePeople = stats.reduce((sum, stat) => sum + stat.current_count, 0);
+                }
+                
+                document.getElementById('totalPeople').textContent = totalUniquePeople;
+                
+            } catch (error) {
+                console.error('Error fetching people counts:', error);
+                document.getElementById('detectionStatus').textContent = 'Offline';
+                document.getElementById('detectionStatus').className = 'text-base font-semibold text-gray-400';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('refreshBtn').addEventListener('click', loadCameras);
+        
+        document.getElementById('managePeopleBtn').addEventListener('click', openPeopleModal);
+
+        document.getElementById('gridView2x2').addEventListener('click', () => {
+            document.getElementById('cameraGrid').className = 'grid grid-cols-1 lg:grid-cols-2 gap-4 grid-2x2';
+        });
+
+        document.getElementById('gridView1x4').addEventListener('click', () => {
+            document.getElementById('cameraGrid').className = 'grid gap-4 grid-1x4';
+        });
+        
+        // People management functions
+        async function openPeopleModal() {
+            const modal = document.getElementById('peopleModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            await loadTrackedPeople();
+        }
+        
+        function closePeopleModal() {
+            const modal = document.getElementById('peopleModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        
+        async function loadTrackedPeople() {
+            const peopleList = document.getElementById('peopleList');
+            peopleList.innerHTML = '<div class="text-center text-gray-500 py-8">Loading...</div>';
+            
+            try {
+                const roomsResponse = await fetch(`${API_URL}/api/rooms/`);
+                if (!roomsResponse.ok) return;
+                
+                const rooms = await roomsResponse.json();
+                let html = '';
+                
+                for (const room of rooms) {
+                    const countResponse = await fetch(`${API_URL}/api/rooms/${room.id}/person-count`);
+                    if (!countResponse.ok) continue;
+                    
+                    const countData = await countResponse.json();
+                    
+                    if (countData.active_persons.length > 0) {
+                        html += `
+                            <div class="mb-6">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-3">${room.name}</h3>
+                                <div class="space-y-3">
+                        `;
+                        
+                        for (const person of countData.active_persons) {
+                            const personName = person.name || `Person ${person.global_id}`;
+                            const isNamed = person.name !== null;
+                            
+                            html += `
+                                <div class="person-card rounded-lg p-4">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex-1">
+                                            <div class="flex items-center space-x-2 mb-2">
+                                                <span class="text-lg font-semibold text-white">${personName}</span>
+                                                ${!isNamed ? '<span class="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded-full border border-yellow-500/30">Not Named</span>' : ''}
+                                                <span class="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded-full border border-blue-500/30">
+                                                    Cameras: ${person.visible_in_cameras.join(', ')}
+                                                </span>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <input type="text" 
+                                                       id="name-${room.id}-${person.global_id}" 
+                                                       value="${person.name || ''}" 
+                                                       placeholder="Enter name..."
+                                                       class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                <button onclick="savePersonName(${room.id}, ${person.global_id})" 
+                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg">
+                                                    Save
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        html += `
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
+                if (html === '') {
+                    html = '<div class="text-center text-gray-500 py-8">No tracked people at the moment</div>';
+                }
+                
+                peopleList.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading tracked people:', error);
+                peopleList.innerHTML = '<div class="text-center text-red-500 py-8">Error loading tracked people</div>';
+            }
+        }
+        
+        async function savePersonName(roomId, globalId) {
+            const input = document.getElementById(`name-${roomId}-${globalId}`);
+            const name = input.value.trim();
+            
+            if (!name) {
+                alert('Please enter a name');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/api/rooms/${roomId}/person/${globalId}/name?name=${encodeURIComponent(name)}`, {
+                    method: 'PUT'
+                });
+                
+                if (response.ok) {
+                    alert(`✅ Name saved: ${name}`);
+                    await loadTrackedPeople();
+                } else {
+                    alert('❌ Failed to save name');
+                }
+            } catch (error) {
+                console.error('Error saving name:', error);
+                alert('❌ Error saving name');
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            Object.values(peerConnections).forEach(pc => pc.close());
+        });
+
+        // Load cameras on page load
+        loadCameras();
+        
+        // Update people counts every 2 seconds
+        updatePeopleCounts();
+        setInterval(updatePeopleCounts, 2000);
+    </script>
+</body>
+</html>

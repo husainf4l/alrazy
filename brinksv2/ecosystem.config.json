@@ -1,0 +1,29 @@
+{
+  "apps": [
+    {
+      "name": "brinks-v2",
+      "script": "venv/bin/uvicorn",
+      "args": "main:app --host 0.0.0.0 --port 8001",
+      "cwd": "/home/husain/alrazy/brinksv2",
+      "interpreter": "none",
+      "env": {
+        "PYTHONPATH": "/home/husain/alrazy/brinksv2"
+      },
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10
+    },
+    {
+      "name": "rtsp-webrtc-server",
+      "script": "./rtsp-webrtc-server",
+      "cwd": "/home/husain/alrazy/brinksv2/RTSPtoWebRTC",
+      "interpreter": "none",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "env": {
+        "GIN_MODE": "release"
+      }
+    }
+  ]
+}

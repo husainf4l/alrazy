@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAZZ Room Designer - Professional CAD</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/room-designer.css">
+</head>
+<body>
+    <!-- Top Ribbon (AutoCAD Style) -->
+    <div class="ribbon">
+        <div class="ribbon-tabs">
+            <div class="ribbon-tab active" data-tab="home">Home</div>
+            <div class="ribbon-tab" data-tab="insert">Insert</div>
+            <div class="ribbon-tab" data-tab="annotate">Annotate</div>
+            <div class="ribbon-tab" data-tab="view">View</div>
+        </div>
+
+        <!-- Home Tab Content -->
+        <div class="ribbon-content" id="ribbon-home" style="display: flex;">
+            <!-- Draw Tools -->
+            <div class="ribbon-group">
+                <div class="ribbon-group-title">Draw</div>
+                <div class="ribbon-buttons">
+                    <button class="ribbon-button" data-tool="wall">
+                        <i class="fas fa-minus"></i>
+                        <span>Wall</span>
+                    </button>
+                    <button class="ribbon-button" data-tool="zone">
+                        <i class="fas fa-draw-polygon"></i>
+                        <span>Zone</span>
+                    </button>
+                    <button class="ribbon-button" data-tool="camera">
+                        <i class="fas fa-video"></i>
+                        <span>Camera</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- View Tools -->
+            <div class="ribbon-group">
+                <div class="ribbon-group-title">View</div>
+                <div class="ribbon-buttons">
+                    <button class="ribbon-button active" id="gridToggle">
+                        <i class="fas fa-th"></i>
+                        <span>Grid</span>
+                    </button>
+                    <button class="ribbon-button" id="zoomFit">
+                        <i class="fas fa-expand"></i>
+                        <span>Zoom All</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insert Tab Content -->
+        <div class="ribbon-content" id="ribbon-insert" style="display: none;">
+            <div class="ribbon-group">
+                <div class="ribbon-group-title">Insert</div>
+                <div class="ribbon-buttons">
+                    <button class="ribbon-button" data-tool="camera">
+                        <i class="fas fa-video"></i>
+                        <span>Camera</span>
+                    </button>
+                    <button class="ribbon-button" data-tool="zone">
+                        <i class="fas fa-draw-polygon"></i>
+                        <span>Zone</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Annotate Tab Content -->
+        <div class="ribbon-content" id="ribbon-annotate" style="display: none;">
+            <div class="ribbon-group">
+                <div class="ribbon-group-title">Annotate</div>
+                <div class="ribbon-buttons">
+                    <button class="ribbon-button" id="saveDesign" style="background: #28a745; border-color: #28a745;">
+                        <i class="fas fa-save"></i>
+                        <span>Save</span>
+                    </button>
+                    <button class="ribbon-button" id="loadDesign" style="background: #0078d7; border-color: #0078d7;">
+                        <i class="fas fa-folder-open"></i>
+                        <span>Load</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View Tab Content -->
+        <div class="ribbon-content" id="ribbon-view" style="display: none;">
+            <div class="ribbon-group">
+                <div class="ribbon-group-title">Display</div>
+                <div class="ribbon-buttons">
+                    <button class="ribbon-button" id="zoomFit" style="margin-left: 0;">
+                        <i class="fas fa-expand"></i>
+                        <span>Zoom All</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Left Toolbar -->
+    <div class="left-toolbar">
+        <div class="tool-button active" data-tool="select" title="Select (S)">
+            <i class="fas fa-mouse-pointer"></i>
+            <span>Select</span>
+        </div>
+        <div class="tool-button" data-tool="wall" title="Wall (W)">
+            <i class="fas fa-minus"></i>
+            <span>Wall</span>
+        </div>
+        <div class="tool-button" data-tool="camera" title="Camera (C)">
+            <i class="fas fa-video"></i>
+            <span>Camera</span>
+        </div>
+        <div class="tool-button" data-tool="zone" title="Zone (Z)">
+            <i class="fas fa-draw-polygon"></i>
+            <span>Zone</span>
+        </div>
+    </div>
+
+    <!-- Canvas Container -->
+    <div class="canvas-container">
+        <canvas id="designCanvas"></canvas>
+    </div>
+
+    <!-- Right Properties Panel -->
+    <div class="properties-panel">
+        <div class="properties-header">
+            <i class="fas fa-sliders-h"></i> PROPERTIES
+        </div>
+        
+        <!-- General Properties -->
+        <div class="property-section" id="generalProps">
+            <div class="property-section-title">General</div>
+            <div class="property-row">
+                <span class="property-label">Room Name</span>
+                <input type="text" class="property-input" id="roomName" value="Office">
+            </div>
+            <div class="property-row">
+                <span class="property-label">Scale (px/m)</span>
+                <input type="number" class="property-input" id="scale" value="20">
+            </div>
+            <div class="property-row">
+                <span class="property-label">Grid Size (m)</span>
+                <input type="number" class="property-input" id="gridSize" value="0.1" step="0.1" min="0.1">
+            </div>
+        </div>
+
+        <!-- Available Cameras -->
+        <div class="property-section" id="availableCamerasSection">
+            <div class="property-section-title">
+                <i class="fas fa-video"></i> Available Cameras
+            </div>
+            <div id="camerasList" style="max-height: 200px; overflow-y: auto;">
+                <div style="color: #888; font-size: 12px; padding: 8px;">
+                    Loading cameras...
+                </div>
+            </div>
+        </div>
+
+        <!-- Selection Properties -->
+        <div class="property-section" id="selectionProps" style="display: none;">
+            <div class="property-section-title">Selected Object</div>
+            <div class="property-row">
+                <span class="property-label">Type</span>
+                <input type="text" class="property-input" id="objType" readonly>
+            </div>
+            <div class="property-row">
+                <span class="property-label">X Position</span>
+                <input type="number" class="property-input" id="objX" step="0.1">
+            </div>
+            <div class="property-row">
+                <span class="property-label">Y Position</span>
+                <input type="number" class="property-input" id="objY" step="0.1">
+            </div>
+            <div class="property-row">
+                <span class="property-label">Color</span>
+                <input type="color" class="property-color" id="objColor" value="#ffffff">
+            </div>
+            <button class="property-button danger" id="deleteObj">
+                <i class="fas fa-trash"></i> Delete Object
+            </button>
+        </div>
+
+        <!-- Camera Properties -->
+        <div class="property-section" id="cameraProps" style="display: none;">
+            <div class="property-section-title">Camera Settings</div>
+            <div class="property-row">
+                <span class="property-label">Camera ID</span>
+                <input type="text" class="property-input" id="cameraId" readonly>
+            </div>
+            <div class="property-row">
+                <span class="property-label">Angle (deg)</span>
+                <input type="number" class="property-input" id="cameraAngle" value="0" step="15">
+            </div>
+            <div class="property-row">
+                <span class="property-label">FOV (deg)</span>
+                <input type="number" class="property-input" id="cameraFOV" value="90" step="10">
+            </div>
+            <div class="property-row">
+                <span class="property-label">Range (m)</span>
+                <input type="number" class="property-input" id="cameraRange" value="5" step="1">
+            </div>
+        </div>
+
+        <!-- Layers -->
+        <div class="property-section">
+            <div class="property-section-title">Layers</div>
+            <div class="layer-item active" data-layer="walls">
+                <div class="layer-visibility"><i class="fas fa-eye"></i></div>
+                <div class="layer-color" style="background: #ffffff;"></div>
+                <div class="layer-name">Walls</div>
+            </div>
+            <div class="layer-item" data-layer="cameras">
+                <div class="layer-visibility"><i class="fas fa-eye"></i></div>
+                <div class="layer-color" style="background: #00ffff;"></div>
+                <div class="layer-name">Cameras</div>
+            </div>
+            <div class="layer-item" data-layer="zones">
+                <div class="layer-visibility"><i class="fas fa-eye"></i></div>
+                <div class="layer-color" style="background: #ff00ff;"></div>
+                <div class="layer-name">Zones</div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="property-section">
+            <div class="property-section-title">Actions</div>
+            <button class="property-button" id="autoGenerateZones" style="background: #10b981; margin-bottom: 8px;">
+                <i class="fas fa-magic"></i> Auto Generate Zones
+            </button>
+            <button class="property-button" id="saveDesign">
+                <i class="fas fa-save"></i> Save Design
+            </button>
+            <button class="property-button" id="loadDesign" style="background: #666; margin-top: 8px;">
+                <i class="fas fa-folder-open"></i> Load Design
+            </button>
+            <button class="property-button" id="exportPNG" style="background: #666; margin-top: 8px;">
+                <i class="fas fa-download"></i> Export JSON
+            </button>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item coordinates">
+            <i class="fas fa-crosshairs"></i>
+            <span id="coords">X: 0.00, Y: 0.00</span>
+        </div>
+        <div class="status-item">
+            <span class="snap-button active" id="snapGrid" title="Snap to Grid">
+                <i class="fas fa-th"></i> GRID
+            </span>
+        </div>
+        <div class="status-item">
+            <span class="snap-button" id="snapObject" title="Snap to Object">
+                <i class="fas fa-magnet"></i> OBJECT
+            </span>
+        </div>
+        <div class="status-item">
+            <span class="snap-button" id="orthoMode" title="Orthogonal Mode">
+                <i class="fas fa-ruler-combined"></i> ORTHO
+            </span>
+        </div>
+        <div class="status-item" style="margin-left: auto;">
+            <i class="fas fa-info-circle"></i>
+            <span id="statusMsg">Ready</span>
+        </div>
+    </div>
+
+    <!-- Room ID passed from backend -->
+    <script>
+        (function() {
+            // Jinja2 template renders the room ID here
+            window.ROOM_ID = parseInt('{{ room_id }}', 10);
+        })();
+    </script>
+
+    <!-- Load modular JavaScript files -->
+    <script src="/static/js/room-designer-state.js"></script>
+    <script src="/static/js/room-designer-utils.js"></script>
+    <script src="/static/js/room-designer-renderer.js"></script>
+    <script src="/static/js/room-designer-properties.js"></script>
+    <script src="/static/js/room-designer-events.js"></script>
+    <script src="/static/js/room-designer-api.js"></script>
+    <script src="/static/js/room-designer-main.js"></script>
+</body>
+</html>
