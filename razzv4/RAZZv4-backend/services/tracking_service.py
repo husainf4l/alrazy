@@ -1,6 +1,6 @@
 """
 People Detection and Tracking Service using YOLO11 + ByteTrack + DeepSORT
-Exactly matching BRINKSv2 implementation
+Following clean architecture principles with centralized configuration
 """
 
 import cv2
@@ -10,19 +10,25 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import supervision as sv
 from deep_sort_realtime.deepsort_tracker import DeepSort
-import logging
+from logging_config import get_logger
+from config import get_settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+settings = get_settings()
 
 
 class TrackingService:
-    """ByteTrack (30 FPS) + DeepSORT ReID fallback - BRINKSv2 style"""
+    """ByteTrack (30 FPS) + DeepSORT ReID fallback with global cross-camera tracking"""
     
-    def __init__(self, conf_threshold: float = 0.5, bytetrack_threshold: float = 0.6):
-        logger.info("Initializing tracking service (BRINKSv2 style)...")
+    def __init__(self, conf_threshold: float = None, bytetrack_threshold: float = None):
+        logger.info("Initializing tracking service with clean architecture...")
+        
+        # Use centralized config or fallback to defaults
+        self.conf_threshold = conf_threshold or settings.YOLO_CONFIDENCE
+        self.bytetrack_threshold = bytetrack_threshold or settings.BYTETRACK_THRESHOLD
         self.device = self._detect_device()
-        self.conf_threshold = conf_threshold
-        self.bytetrack_threshold = bytetrack_threshold
+        
+        # Tracking state
         self.byte_trackers = {}
         self.deepsort_trackers = {}
         self.camera_tracks = defaultdict(lambda: {
@@ -30,10 +36,15 @@ class TrackingService:
             'last_update': None, 'bytetrack_confident': 0,
             'deepsort_assisted': 0, 'last_frame': None
         })
-        # Global ReID for cross-camera tracking
+        
+        # Global ReID for cross-camera tracking (using config values)
         self.global_person_id = 0
+        self.global_id_map = {}  # {f"{camera_id}_{local_track_id}": global_id}
         self.global_features = {}  # {global_id: feature_vector}
-        logger.info("✅ Tracking service initialized")
+        self.global_last_seen = {}  # {global_id: timestamp}
+        self.global_id_timeout = settings.GLOBAL_ID_TIMEOUT
+        
+        logger.info(f"✅ Tracking service initialized (conf={self.conf_threshold}, timeout={self.global_id_timeout}s)")
     
     def _detect_device(self) -> str:
         try:
@@ -184,6 +195,10 @@ class TrackingService:
         self.camera_tracks[camera_id]['count'] = len(confident_tracks)
         self.camera_tracks[camera_id]['last_update'] = datetime.now()
         self.camera_tracks[camera_id]['last_frame'] = frame  # Store frame for visualization
+        
+        # Assign global IDs to tracks
+        self._assign_global_ids(camera_id, confident_tracks)
+        
         self.camera_tracks[camera_id]['history'].append({
             'timestamp': datetime.now().isoformat(),
             'count': len(confident_tracks)
@@ -208,8 +223,6 @@ class TrackingService:
         tracks = self.camera_tracks[camera_id].get('tracks', {})
         people_count = self.camera_tracks[camera_id].get('count', 0)
         
-        logger.debug(f"📊 Drawing {len(tracks)} tracks for camera {camera_id}, people_count={people_count}")
-        
         for track_id, track_data in tracks.items():
             bbox = track_data['bbox']
             source = track_data.get('source', 'unknown')
@@ -218,12 +231,19 @@ class TrackingService:
             # Draw bounding box
             cv2.rectangle(annotated, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
             
-            try:
-                abs_track_id = abs(int(track_id)) if not isinstance(track_id, str) else track_id.replace("ds_", "")
-            except:
-                abs_track_id = "?"
+            # Use global ID if available, otherwise use local ID
+            local_track_key = f"{camera_id}_{track_id}"
+            global_id = self.global_id_map.get(local_track_key)
             
-            label = f"ID:{abs_track_id}"
+            if global_id is not None:
+                label = f"ID:{global_id}"
+            else:
+                try:
+                    abs_track_id = abs(int(track_id)) if not isinstance(track_id, str) else track_id.replace("ds_", "")
+                except:
+                    abs_track_id = "?"
+                label = f"ID:{abs_track_id}"
+            
             font = cv2.FONT_HERSHEY_SIMPLEX
             (label_width, label_height), _ = cv2.getTextSize(label, font, 0.6, 2)
             label_y = max(bbox[1] - 8, label_height + 13)
@@ -239,7 +259,6 @@ class TrackingService:
         cv2.putText(annotated, f"Tracks: {people_count}", (10, 25),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        logger.debug(f"✅ Drew {len(tracks)} bounding boxes on frame for camera {camera_id}")
         return annotated
     
     def get_statistics(self, camera_id: int) -> Dict:
@@ -287,22 +306,18 @@ class TrackingService:
         
         return people_list
     
-    def _deduplicate_people(self, people_list: List[Dict], similarity_threshold: float = 0.5, distance_threshold: float = 250.0) -> List[Dict]:
+    def _deduplicate_people(self, people_list: List[Dict], similarity_threshold: float = None, distance_threshold: float = None) -> List[Dict]:
         """
         Remove duplicate people detected by multiple cameras using ReID appearance similarity
         Uses cosine similarity on DeepSORT feature embeddings for robust cross-camera matching
         Falls back to spatial distance for ByteTrack detections without features
         """
+        # Use config defaults if not provided
+        similarity_threshold = similarity_threshold or settings.DEDUP_SIMILARITY_THRESHOLD
+        distance_threshold = distance_threshold or settings.DEDUP_DISTANCE_THRESHOLD
+        
         if len(people_list) <= 1:
             return people_list
-        
-        # Debug: Log initial state
-        logger.info("=" * 80)
-        logger.info(f"DEDUPLICATION START: {len(people_list)} detections")
-        for idx, p in enumerate(people_list):
-            has_feat = p.get('feature') is not None
-            logger.info(f"  [{idx}] Cam{p['camera_id']}:Track{p['track_id']} | "
-                       f"BBox{p['bbox']} | Conf={p['confidence']:.2f} | Feature={'YES' if has_feat else 'NO'}")
         
         # Sort by confidence (keep highest confidence detections)
         people_list.sort(key=lambda x: x['confidence'], reverse=True)
@@ -344,8 +359,6 @@ class TrackingService:
                     if similarity > similarity_threshold:
                         is_duplicate = True
                         match_reason = f"ReID sim={similarity:.3f}>{similarity_threshold}"
-                        logger.info(f"  ✓ MATCH [{i}] Cam{person1['camera_id']}:Track{person1['track_id']} <-> "
-                                   f"[{j}] Cam{person2['camera_id']}:Track{person2['track_id']} | {match_reason}")
                 
                 # Always also check spatial distance as fallback/confirmation
                 if not is_duplicate:
@@ -357,16 +370,105 @@ class TrackingService:
                     if distance < distance_threshold:
                         is_duplicate = True
                         match_reason = f"Distance={distance:.1f}px<{distance_threshold}px"
-                        logger.info(f"  ✓ MATCH [{i}] Cam{person1['camera_id']}:Track{person1['track_id']} <-> "
-                                   f"[{j}] Cam{person2['camera_id']}:Track{person2['track_id']} | {match_reason}")
                 
                 if is_duplicate:
                     used_indices.add(j)
                     match_count += 1
         
-        logger.info(f"DEDUPLICATION RESULT: {len(people_list)} detections → {len(deduplicated)} unique | {match_count} matches")
-        logger.info("=" * 80)
+        # Only log summary if there were duplicates
+        if match_count > 0:
+            logger.info(f"Deduplicated: {len(people_list)} → {len(deduplicated)} people ({match_count} duplicates removed)")
         return deduplicated
+    
+    def _assign_global_ids(self, camera_id: int, tracks: Dict):
+        """
+        Assign global IDs to tracks based on cross-camera ReID matching
+        Same person gets same global ID across all cameras
+        
+        Best practices for multi-camera tracking:
+        1. Use appearance features (ReID) as primary matching
+        2. Lower similarity threshold (0.5) to catch more matches
+        3. Consider temporal constraints (people don't teleport)
+        4. Update global features with running average
+        """
+        current_time = datetime.now()
+        
+        # Clean up expired global IDs (30 seconds timeout)
+        expired_ids = []
+        for global_id, last_seen in self.global_last_seen.items():
+            if (current_time - last_seen).total_seconds() > self.global_id_timeout:
+                expired_ids.append(global_id)
+        
+        for global_id in expired_ids:
+            self.global_features.pop(global_id, None)
+            self.global_last_seen.pop(global_id, None)
+            # Remove from map
+            keys_to_remove = [k for k, v in self.global_id_map.items() if v == global_id]
+            for k in keys_to_remove:
+                self.global_id_map.pop(k, None)
+        
+        # Process each track
+        for track_id, track_data in tracks.items():
+            local_track_key = f"{camera_id}_{track_id}"
+            feature = track_data.get('feature')
+            
+            # If already has global ID, update last seen
+            if local_track_key in self.global_id_map:
+                global_id = self.global_id_map[local_track_key]
+                self.global_last_seen[global_id] = current_time
+                
+                # Update feature with running average if available (use config smoothing)
+                if feature is not None and global_id in self.global_features:
+                    old_feature = self.global_features[global_id]
+                    smoothing = settings.GLOBAL_ID_FEATURE_SMOOTHING
+                    self.global_features[global_id] = smoothing * old_feature + (1 - smoothing) * feature
+                elif feature is not None:
+                    self.global_features[global_id] = feature
+                
+                continue
+            
+            # Try to match with existing global IDs from OTHER cameras
+            best_match_id = None
+            best_similarity = 0.0
+            
+            if feature is not None and len(self.global_features) > 0:
+                for global_id, global_feature in self.global_features.items():
+                    # Skip if this global ID is from the same camera (already matched locally)
+                    existing_keys = [k for k, v in self.global_id_map.items() if v == global_id]
+                    same_camera = any(k.startswith(f"{camera_id}_") for k in existing_keys)
+                    
+                    if same_camera:
+                        continue  # Don't match with IDs from same camera
+                    
+                    similarity = self._cosine_similarity(feature, global_feature)
+                    
+                    if similarity > best_similarity and similarity > settings.GLOBAL_ID_SIMILARITY_THRESHOLD:
+                        best_similarity = similarity
+                        best_match_id = global_id
+            
+            if best_match_id is not None:
+                # Match found - assign existing global ID
+                self.global_id_map[local_track_key] = best_match_id
+                self.global_last_seen[best_match_id] = current_time
+                
+                # Update feature with running average (configurable smoothing)
+                if feature is not None and best_match_id in self.global_features:
+                    old_feature = self.global_features[best_match_id]
+                    smoothing = settings.GLOBAL_ID_FEATURE_SMOOTHING
+                    self.global_features[best_match_id] = smoothing * old_feature + (1 - smoothing) * feature
+                elif feature is not None:
+                    self.global_features[best_match_id] = feature
+                
+                logger.debug(f"Matched {local_track_key} → Global ID {best_match_id} (sim={best_similarity:.3f})")
+            else:
+                # No match - create new global ID
+                self.global_person_id += 1
+                new_global_id = self.global_person_id
+                self.global_id_map[local_track_key] = new_global_id
+                self.global_last_seen[new_global_id] = current_time
+                if feature is not None:
+                    self.global_features[new_global_id] = feature
+                logger.debug(f"Created new global ID {new_global_id} for {local_track_key}")
     
     def _cosine_similarity(self, feature1, feature2) -> float:
         """Calculate cosine similarity between two feature vectors"""

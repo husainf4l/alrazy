@@ -3,7 +3,6 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import uvicorn
-import logging
 import cv2
 import numpy as np
 import time
@@ -22,12 +21,12 @@ from services.tracking_service import TrackingService
 from services.camera_service import CameraService
 from database import SessionLocal
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Configure centralized logging
+from logging_config import setup_logging, get_logger
+
+# Setup logging (INFO level for production, DEBUG for development)
+setup_logging(log_level="INFO")
+logger = get_logger(__name__)
 
 # Global service instances
 yolo_service = None
