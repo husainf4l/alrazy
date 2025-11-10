@@ -5,8 +5,11 @@ from database import get_db
 from models import VaultRoom, Camera
 from typing import List
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
+
+WEBRTC_SERVER = "http://localhost:8083"
 
 router = APIRouter(prefix="/vault-rooms", tags=["vault_rooms"])
 
@@ -214,6 +217,65 @@ async def delete_vault_room(room_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error deleting vault room: {str(e)}")
 
+@router.get("/camera/{camera_id}/info")
+async def get_camera_info(camera_id: int, db: Session = Depends(get_db)):
+    """Get camera RTSP URL and info"""
+    try:
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found")
+        
+        return {
+            "id": camera.id,
+            "name": camera.name,
+            "rtsp_url": camera.rtsp_url,
+            "is_active": camera.is_active,
+            "vault_room_id": camera.vault_room_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to get camera info: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error getting camera info: {str(e)}")
+
+
+
+@router.get("/{room_id}/people")
+async def get_room_people_data(room_id: int, db: Session = Depends(get_db)):
+    """Get detailed people tracking data for a vault room"""
+    try:
+        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
+        if not vault_room:
+            raise HTTPException(status_code=404, detail="Vault room not found")
+        
+        # Import tracking service
+        from main import tracking_service
+        
+        # Get camera IDs for this room
+        camera_ids = [cam.id for cam in vault_room.cameras if cam.is_active]
+        
+        # Get people list from tracking service
+        people_list = []
+        if tracking_service:
+            people_list = tracking_service.get_people_in_room(camera_ids)
+        
+        return {
+            "room_id": room_id,
+            "room_name": vault_room.name,
+            "current_people_count": len(people_list),
+            "people": people_list,
+            "timestamp": __import__('time').time()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: Failed to get people data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting people data: {str(e)}")
+
 @router.get("/{room_id}/cameras/webrtc")
 async def get_camera_webrtc_streams(room_id: int, db: Session = Depends(get_db)):
     """Get WebRTC streams for all cameras in a vault room - returns stream IDs only"""
@@ -323,27 +385,44 @@ async def accept_webrtc_answer(
 async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
     """
     Get current people count for a vault room
-    Returns total count across all cameras
+    Returns total count across all cameras from live tracking
     """
     try:
         vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
         if not vault_room:
             raise HTTPException(status_code=404, detail="Vault room not found")
         
-        # Get individual camera counts
+        # Import camera service to get real-time counts
+        from main import camera_service, tracking_service
+        
+        # Get individual camera counts from live tracking
         camera_counts = []
+        total_count = 0
+        
         for camera in vault_room.cameras:
             if camera.is_active:
+                people_count = 0
+                
+                # Get live count from camera processor
+                if camera_service:
+                    processor = camera_service.processors.get(camera.id)
+                    if processor and processor.is_running:
+                        # Get count from tracking service
+                        if tracking_service:
+                            cam_tracks = tracking_service.camera_tracks.get(camera.id, {})
+                            people_count = cam_tracks.get('count', 0)
+                
                 camera_counts.append({
                     "camera_id": camera.id,
                     "camera_name": camera.name,
-                    "people_count": camera.current_people_count or 0
+                    "people_count": people_count
                 })
+                total_count += people_count
         
         return {
             "room_id": room_id,
             "room_name": vault_room.name,
-            "total_people_count": vault_room.current_people_count or 0,
+            "total_people_count": total_count,
             "cameras": camera_counts
         }
     
@@ -560,52 +639,72 @@ async def rename_person(
         raise HTTPException(status_code=500, detail=f"Error renaming person: {str(e)}")
 
 
-@router.get("/{room_id}/people")
-async def get_people_in_room(
+@router.post("/{room_id}/cameras/{camera_id}/register-webrtc")
+async def register_camera_webrtc(
     room_id: int,
+    camera_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get list of all people currently in the room with their names and global IDs"""
+    """
+    Register a camera's RTSP stream with the RTSPtoWebRTC server.
+    This creates the stream dynamically so it can be accessed via WebRTC.
+    """
     try:
-        vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
-        if not vault_room:
-            raise HTTPException(status_code=404, detail="Vault room not found")
+        # Get camera from database
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found")
         
-        # Import tracking service
-        from main import tracking_service
+        if not camera.rtsp_url:
+            raise HTTPException(status_code=400, detail="Camera has no RTSP URL")
         
-        if not tracking_service:
-            raise HTTPException(status_code=503, detail="Tracking service not available")
+        # Register stream with WebRTC server
+        stream_id = f"camera{camera_id}"
         
-        # Get all person names
-        all_names = tracking_service.get_all_person_names()
-        
-        # Get current people in this room's cameras
-        camera_ids = [cam.id for cam in vault_room.cameras]
-        people_list = []
-        
-        for camera_id in camera_ids:
-            if camera_id in tracking_service.camera_tracks:
-                tracks = tracking_service.camera_tracks[camera_id].get('tracks', {})
-                for track_id, track_data in tracks.items():
-                    global_id = track_data.get('global_id')
-                    if global_id and global_id not in [p['global_id'] for p in people_list]:
-                        people_list.append({
-                            'global_id': global_id,
-                            'name': track_data.get('name', f"Person {global_id}"),
-                            'camera_id': camera_id,
-                            'bbox': track_data.get('bbox')
-                        })
-        
-        return {
-            "room_id": room_id,
-            "room_name": vault_room.name,
-            "people_count": len(people_list),
-            "people": people_list
-        }
+        async with httpx.AsyncClient() as client:
+            # First, try to add the stream via POST to the config endpoint
+            response = await client.post(
+                f"{WEBRTC_SERVER}/stream",
+                json={
+                    "name": stream_id,
+                    "channels": {
+                        "0": {
+                            "url": camera.rtsp_url,
+                            "on_demand": True,
+                            "disable_audio": True
+                        }
+                    }
+                },
+                timeout=5.0
+            )
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"Registered stream {stream_id} with WebRTC server")
+                return {
+                    "success": True,
+                    "stream_id": stream_id,
+                    "camera_id": camera_id,
+                    "message": "Stream registered successfully"
+                }
+            else:
+                logger.warning(f"Failed to register stream: {response.status_code} - {response.text}")
+                # Stream might already exist, return success anyway
+                return {
+                    "success": True,
+                    "stream_id": stream_id,
+                    "camera_id": camera_id,
+                    "message": "Stream may already be registered"
+                }
     
+    except httpx.RequestError as e:
+        logger.error(f"Error connecting to WebRTC server: {type(e).__name__} - {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=503, detail=f"WebRTC server unavailable: {type(e).__name__} - {str(e)}")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting people list: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting people list: {str(e)}")
+        logger.error(f"Error registering WebRTC stream: {type(e).__name__} - {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error registering stream: {str(e)}")

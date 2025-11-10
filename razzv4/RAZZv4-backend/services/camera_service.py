@@ -6,7 +6,6 @@ Handles camera connections, frame capture, people counting with tracking
 import logging
 import threading
 import time
-import os
 from typing import Optional, Dict
 import cv2
 import numpy as np
@@ -16,10 +15,6 @@ from sqlalchemy.orm import Session
 from services.yolo_service import YOLOService
 from services.tracking_service import TrackingService
 from models import Camera, VaultRoom
-
-# Suppress FFmpeg/OpenCV H.264 decoding warnings
-os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
-os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +39,13 @@ class CameraProcessor:
         self.last_person_count = 0
         self.last_update_time = datetime.now()
         self.last_annotated_frame = None  # Store latest annotated frame
-        self.frame_skip = 1  # Process EVERY frame (30 FPS like brinksv2)
+        self.last_tracks = {}  # Store tracking data for WebSocket (bbox, id, confidence)
+        self.fps = 0  # Current FPS
+        self.frame_count = 0  # Total frames processed
+        self.frame_skip = 1  # Process frames at reduced rate
         self.frame_counter = 0
         self.last_process_time = 0
-        self.frame_interval = 1.0 / 30  # 30 FPS target (same as brinksv2)
+        self.frame_interval = 1.0 / 5  # 5 FPS target (reduced from 30 to save CPU)
         
         logger.info(f"CameraProcessor initialized for camera {camera_id} with tracking={'enabled' if use_tracking else 'disabled'}")
         
@@ -78,20 +76,17 @@ class CameraProcessor:
             if self.capture:
                 self.capture.release()
             
-            # Open RTSP stream with TCP transport (more reliable than UDP)
-            self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+            # Open RTSP stream
+            self.capture = cv2.VideoCapture(self.rtsp_url)
             
             # Set buffer size to 1 to get most recent frame
             self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            # Force TCP transport for reliable delivery
-            self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
             
             if not self.capture.isOpened():
                 logger.error(f"Failed to open RTSP stream for camera {self.camera_id}")
                 return False
             
-            logger.info(f"Successfully connected to camera {self.camera_id} (TCP transport)")
+            logger.info(f"Successfully connected to camera {self.camera_id}")
             return True
             
         except Exception as e:
@@ -129,7 +124,7 @@ class CameraProcessor:
                     # Reset failure counter on successful frame
                     consecutive_failures = 0
                     
-                    # Time-based throttling (30 FPS target - EXACTLY like brinksv2)
+                    # Time-based throttling (5 FPS target - reduced to save CPU with multiple cameras)
                     current_time = time.time()
                     if current_time - self.last_process_time < self.frame_interval:
                         continue  # Skip if not enough time has passed
@@ -141,6 +136,10 @@ class CameraProcessor:
                             self.camera_id, frame, self.yolo_service
                         )
                         
+                        # Store tracking data for WebSocket
+                        camera_state = self.tracking_service.camera_tracks.get(self.camera_id, {})
+                        self.last_tracks = camera_state.get('tracks', {})
+                        
                         # Draw tracking boxes on frame (BRINKSv2: frame first, camera_id second)
                         annotated_frame = self.tracking_service.draw_tracks(frame, self.camera_id)
                         
@@ -148,10 +147,16 @@ class CameraProcessor:
                         self.last_annotated_frame = annotated_frame
                         person_count = tracking_result['people_count']
                         
+                        # Update FPS counter
+                        self.frame_count += 1
+                        if self.frame_count % 30 == 0:  # Update FPS every 30 frames
+                            elapsed = current_time - self.last_process_time if self.last_process_time > 0 else 1
+                            self.fps = 30 / elapsed if elapsed > 0 else 0
+                        
                         # Update last process time
                         self.last_process_time = current_time
                         
-                        logger.debug(f"📹 Camera {self.camera_id}: {person_count} people tracked")
+                        logger.debug(f"Camera {self.camera_id}: {person_count} people tracked")
                     else:
                         # Fallback to simple counting (with annotation for visualization)
                         person_count, detections_list, detections_sv = self.yolo_service.detect_people(frame)
@@ -181,28 +186,22 @@ class CameraProcessor:
                 camera = db.query(Camera).filter(Camera.id == self.camera_id).first()
                 if camera:
                     camera.current_people_count = person_count
-                    logger.debug(f"💾 Camera {self.camera_id}: Updating DB with {person_count} people")
                     
-                    # Update vault room total with cross-camera deduplication
+                    # Update vault room total
                     if camera.vault_room_id:
                         vault_room = db.query(VaultRoom).filter(VaultRoom.id == camera.vault_room_id).first()
                         if vault_room:
-                            # Get all camera IDs in this vault room
-                            camera_ids = [cam.id for cam in vault_room.cameras]
-                            logger.info(f"🏛️ Vault Room {vault_room.id} ({vault_room.name}): Starting cross-camera deduplication for cameras {camera_ids}")
-                            
-                            # Use ReID-based cross-camera deduplication
-                            unique_count = self.tracking_service.get_unique_people_count_across_cameras(camera_ids)
-                            vault_room.current_people_count = unique_count
-                            logger.info(f"✅ Vault Room {vault_room.id}: Updated to {unique_count} unique people")
+                            # Sum all cameras in this vault room
+                            total_count = sum(cam.current_people_count or 0 for cam in vault_room.cameras)
+                            vault_room.current_people_count = total_count
                     
                     db.commit()
-                    logger.debug(f"✅ Updated camera {self.camera_id} people count: {person_count}")
+                    logger.info(f"Updated camera {self.camera_id} people count: {person_count}")
                     self.last_update_time = datetime.now()
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"❌ Error updating database for camera {self.camera_id}: {e}")
+            logger.error(f"Error updating database for camera {self.camera_id}: {e}")
 
 
 class CameraService:

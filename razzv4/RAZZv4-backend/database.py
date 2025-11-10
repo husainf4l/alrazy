@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://username:password@149.200.251.12:5432/razzv4")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://husain:tt55oo77@149.200.251.12:5432/razzv4")
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)

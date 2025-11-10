@@ -11,48 +11,145 @@
                 extend: {
                     fontFamily: {
                         'sf': ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-in-out',
+                        'slide-up': 'slideUp 0.4s ease-out',
+                        'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        pulseSoft: {
+                            '0%, 100%': { opacity: '1' },
+                            '50%': { opacity: '0.6' },
+                        },
                     }
                 }
             }
         }
     </script>
+    <style>
+        /* Minimal Apple-style effects */
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        /* Smooth minimal scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f5f5f7;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #d1d1d6;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a6;
+        }
+        
+        /* Subtle camera card hover */
+        .camera-card {
+            transition: all 0.3s ease;
+        }
+        
+        .camera-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Person item animation */
+        .person-item {
+            animation: slideUp 0.4s ease-out;
+        }
+        
+        /* Status indicator pulse */
+        @keyframes status-pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.8;
+                transform: scale(1.1);
+            }
+        }
+        
+        .status-live {
+            animation: status-pulse 2s ease-in-out infinite;
+        }
+    </style>
 </head>
-<body class="bg-gray-50 font-sf text-gray-900">
-    <div class="min-h-screen flex flex-col">
-        <!-- Header -->
-        <div class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-4">
-                    <a href="/vault-room" class="text-gray-600 hover:text-gray-900 transition-colors duration-200">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                    </a>
-                    <div>
-                        <h1 id="roomTitle" class="text-2xl font-light text-gray-900">Loading...</h1>
-                        <p class="text-sm text-gray-600 mt-1">Live Camera Streams</p>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span class="text-sm text-gray-600">Live</span>
-                    </div>
-                    <button onclick="window.close()" class="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium transition-colors duration-200 rounded">
-                        Close
-                    </button>
+<body class="bg-white font-sf text-gray-900">
+    <div class="min-h-screen flex">
+        <!-- People Sidebar - Minimal Apple Style -->
+        <div id="peopleSidebar" class="w-80 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden">
+            <!-- Sidebar Header -->
+            <div class="bg-white border-b border-gray-200 px-6 py-5">
+                <h2 class="text-xl font-light text-gray-900 tracking-tight">Tracked People</h2>
+                <p id="peopleCount" class="text-sm text-gray-600 mt-1 font-normal">0 people detected</p>
+            </div>
+            
+            <!-- People List -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-2" id="peopleList">
+                <div class="text-center py-12 text-gray-400">
+                    <svg class="w-16 h-16 mx-auto mb-3 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    </svg>
+                    <p class="text-sm font-light">No people detected yet</p>
                 </div>
             </div>
         </div>
 
-        <!-- Camera Grid -->
-        <div class="flex-1 p-6">
-            <div id="cameraGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 h-full">
-                <!-- Loading state -->
-                <div class="col-span-full flex items-center justify-center py-12">
-                    <div class="text-center">
-                        <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900 mb-4"></div>
-                        <p class="text-gray-600">Loading camera streams...</p>
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col">
+            <!-- Header - Clean Minimal -->
+            <div class="bg-white border-b border-gray-200 px-8 py-5">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <a href="/vault-room" class="text-gray-600 hover:text-gray-900 transition-colors duration-200">
+                            <svg class="w-6 h-6 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                        </a>
+                        <div>
+                            <h1 id="roomTitle" class="text-3xl font-extralight text-gray-900 tracking-tight">Loading...</h1>
+                            <p class="text-sm text-gray-500 mt-1 font-light">Live Camera Streams</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <div class="flex items-center space-x-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+                            <div class="w-2 h-2 bg-green-500 rounded-full status-live"></div>
+                            <span class="text-xs font-medium text-green-700">Live</span>
+                        </div>
+                        <button onclick="window.close()" class="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium transition-colors duration-200 rounded">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Camera Grid -->
+            <div class="flex-1 p-8 overflow-y-auto bg-white">
+                <div id="cameraGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 auto-rows-max">
+                    <!-- Loading state -->
+                    <div class="col-span-full flex items-center justify-center py-16">
+                        <div class="text-center animate-fade-in">
+                            <div class="inline-block animate-spin rounded-full h-10 w-10 border-t border-b border-gray-900 mb-4"></div>
+                            <p class="text-gray-500 font-light">Loading camera streams...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -64,10 +161,10 @@
         const urlParams = new URLSearchParams(window.location.search);
         const roomId = urlParams.get('room_id');
 
-        if (!roomId) {
+            if (!roomId) {
             document.getElementById('cameraGrid').innerHTML = `
                 <div class="col-span-full text-center py-12">
-                    <p class="text-red-500">Error: No room ID provided</p>
+                    <p class="text-red-400">Error: No room ID provided</p>
                 </div>
             `;
         } else {
@@ -94,7 +191,7 @@
                 if (data.cameras.length === 0) {
                     cameraGrid.innerHTML = `
                         <div class="col-span-full text-center py-12">
-                            <p class="text-gray-600">No active cameras found</p>
+                            <p class="text-gray-400">No active cameras found</p>
                         </div>
                     `;
                     return;
@@ -103,7 +200,7 @@
                 // Create video players for each camera
                 data.cameras.forEach(camera => {
                     const cameraDiv = document.createElement('div');
-                    cameraDiv.className = 'bg-white rounded-lg overflow-hidden relative shadow-lg border border-gray-200';
+                    cameraDiv.className = 'camera-card bg-white rounded overflow-hidden relative shadow-sm border border-gray-200 hover:border-gray-300';
                     
                     const videoId = `camera-video-${camera.id}`;
                     cameraDiv.innerHTML = `
@@ -114,67 +211,67 @@
                                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;">
                             </canvas>
                         </div>
-                        <div class="absolute top-0 left-0 right-0 bg-gradient-to-b from-gray-900/80 to-transparent p-4" style="z-index: 20; pointer-events: none;"
+                        <div class="absolute top-0 left-0 right-0 p-3" style="z-index: 20; pointer-events: none;">
                             <div class="flex items-center justify-between">
-                                <p class="text-white font-medium">${escapeHtml(camera.name)}</p>
-                                <div class="flex items-center space-x-2">
-                                    <div id="${videoId}-indicator" class="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                                    <span id="${videoId}-status" class="text-white text-sm">Connecting...</span>
+                                <p class="text-white font-light tracking-tight text-sm drop-shadow-lg">${escapeHtml(camera.name)}</p>
+                                <div class="flex items-center space-x-1.5 bg-black/50 backdrop-blur-sm px-2 py-1 rounded-full">
+                                    <div id="${videoId}-indicator" class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                                    <span id="${videoId}-status" class="text-white text-xs font-normal">Connecting...</span>
                                 </div>
                             </div>
-                            <div class="mt-3 flex items-center space-x-3">
-                                <div class="bg-blue-500 px-3 py-1.5 rounded-full shadow-lg">
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                            <div class="mt-2 flex items-center space-x-2">
+                                <div class="bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                                    <div class="flex items-center space-x-1.5">
+                                        <svg class="w-3.5 h-3.5 text-white stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
                                         </svg>
-                                        <span class="text-white text-sm font-bold" id="${videoId}-count">-- people</span>
+                                        <span class="text-white text-xs font-medium" id="${videoId}-count">--</span>
                                     </div>
                                 </div>
-                                <div class="bg-purple-500 px-3 py-1.5 rounded-full shadow-lg" id="${videoId}-tracking-badge" style="display: none;">
-                                    <div class="flex items-center space-x-2">
-                                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                <div class="bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full" id="${videoId}-tracking-badge" style="display: none;">
+                                    <div class="flex items-center space-x-1.5">
+                                        <svg class="w-3.5 h-3.5 text-white stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                                         </svg>
-                                        <span class="text-white text-xs font-semibold" id="${videoId}-tracks">-- tracks</span>
+                                        <span class="text-white text-xs font-medium" id="${videoId}-tracks">--</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-900/80 to-transparent p-4">
+                        <div class="absolute bottom-0 left-0 right-0 p-3">
                             <div class="flex items-center justify-between">
-                                <button onclick="toggleFullscreen('${videoId}')" class="text-white/90 hover:text-white transition-colors" style="z-index: 30; position: relative;">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                                <button onclick="toggleFullscreen('${videoId}')" class="text-white/80 hover:text-white transition-colors duration-200" style="z-index: 30; position: relative;">
+                                    <svg class="w-4 h-4 stroke-1 drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
                                     </svg>
                                 </button>
-                                <div class="flex items-center space-x-4">
-                                    <button onclick="toggleTrackingStats('${videoId}', ${camera.id})" class="text-white/80 hover:text-white transition-colors text-xs flex items-center space-x-1" style="z-index: 30; position: relative;">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                <div class="flex items-center space-x-3">
+                                    <button onclick="toggleTrackingStats('${videoId}', ${camera.id})" class="text-white/80 hover:text-white transition-colors duration-200 text-xs flex items-center space-x-1 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full" style="z-index: 30; position: relative;">
+                                        <svg class="w-3.5 h-3.5 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 4 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                                         </svg>
-                                        <span>Stats</span>
+                                        <span class="font-normal">Stats</span>
                                     </button>
-                                    <span class="text-white/80 text-xs">${escapeHtml(camera.rtsp_url.split('@')[1] || 'Stream')}</span>
+                                    <span class="text-white/60 text-xs font-light drop-shadow">${escapeHtml(camera.rtsp_url.split('@')[1] || 'Stream')}</span>
                                 </div>
                             </div>
-                            <div id="${videoId}-stats-panel" class="mt-3 bg-black/60 rounded p-3 text-xs text-white hidden">
+                            <div id="${videoId}-stats-panel" class="mt-2 bg-black/70 backdrop-blur-md rounded-lg p-3 text-xs text-white hidden animate-slide-up">
                                 <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <span class="text-gray-400">Total Frames:</span>
-                                        <span class="text-white font-semibold ml-1" id="${videoId}-stat-frames">--</span>
+                                    <div class="bg-white/10 rounded p-2">
+                                        <span class="text-white/70 block mb-1 text-xs">Total Frames</span>
+                                        <span class="text-white font-bold text-base" id="${videoId}-stat-frames">--</span>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-400">FPS:</span>
-                                        <span class="text-green-400 font-semibold ml-1" id="${videoId}-stat-fps">--</span>
+                                    <div class="bg-white/10 rounded p-2">
+                                        <span class="text-white/70 block mb-1 text-xs">FPS</span>
+                                        <span class="text-green-400 font-bold text-base" id="${videoId}-stat-fps">--</span>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-400">Active Tracks:</span>
-                                        <span class="text-blue-400 font-semibold ml-1" id="${videoId}-stat-active">--</span>
+                                    <div class="bg-white/10 rounded p-2">
+                                        <span class="text-white/70 block mb-1 text-xs">Active Tracks</span>
+                                        <span class="text-blue-400 font-bold text-base" id="${videoId}-stat-active">--</span>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-400">Total Tracks:</span>
-                                        <span class="text-purple-400 font-semibold ml-1" id="${videoId}-stat-total">--</span>
+                                    <div class="bg-white/10 rounded p-2">
+                                        <span class="text-white/70 block mb-1 text-xs">Total Tracks</span>
+                                        <span class="text-purple-400 font-bold text-base" id="${videoId}-stat-total">--</span>
                                     </div>
                                 </div>
                             </div>
@@ -183,8 +280,8 @@
                     
                     cameraGrid.appendChild(cameraDiv);
                     
-                    // Initialize WebSocket streaming for this camera (with tracking baked in!)
-                    setTimeout(() => initWebSocketStream(videoId, camera.id), 100);
+                    // Initialize WebRTC + WebSocket tracking overlay
+                    setTimeout(() => initWebRTCWithTracking(videoId, camera.id, camera.rtsp_url), 100);
                 });
                 
                 // Start polling for people counts
@@ -197,102 +294,256 @@
             } catch (error) {
                 cameraGrid.innerHTML = `
                     <div class="col-span-full text-center py-12">
-                        <p class="text-red-600">Error loading cameras: ${error.message}</p>
+                        <p class="text-red-400">Error loading cameras: ${error.message}</p>
                     </div>
                 `;
             }
         }
 
-        function initWebSocketStream(videoId, cameraId) {
+        function initWebRTCWithTracking(videoId, cameraId, rtspUrl) {
             const img = document.getElementById(videoId);
+            const canvas = document.getElementById(`${videoId}-overlay`);
+            const ctx = canvas.getContext('2d');
             const status = document.getElementById(`${videoId}-status`);
             const indicator = document.getElementById(`${videoId}-indicator`);
             
-            if (!img) {
-                console.error(`Image element not found: ${videoId}`);
+            if (!img || !canvas) {
+                console.error(`Elements not found for: ${videoId}`);
                 return;
             }
             
-            // Use WebSocket for real-time streaming with tracking visualization
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws/camera/${cameraId}`;
+            // Use nginx proxy paths for WebRTC and WebSocket
+            const WEBRTC_URL = `${window.location.protocol}//${window.location.host}/webrtc`;
+            const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/tracking/${cameraId}`;
             
-            console.log(`Connecting to WebSocket: ${wsUrl}`);
-            if (status) status.textContent = 'Connecting...';
+            let trackingData = { tracks: [] };
+            let trackingWs = null;
+            let useWebRTC = false;  // Flag to track if WebRTC is available
             
-            let ws = null;
-            let reconnectAttempts = 0;
-            const maxReconnectAttempts = 5;
-            
-            function connect() {
-                ws = new WebSocket(wsUrl);
-                ws.binaryType = 'arraybuffer';
-                
-                ws.onopen = () => {
-                    console.log(`WebSocket connected for camera ${cameraId}`);
-                    if (status) status.textContent = 'Connected';
-                    if (indicator) {
-                        indicator.classList.remove('bg-yellow-400', 'bg-red-500', 'animate-pulse');
-                        indicator.classList.add('bg-green-500');
-                    }
-                    reconnectAttempts = 0;
-                };
-                
-                ws.onmessage = (event) => {
-                    // Receive JPEG frame as binary data
-                    if (event.data instanceof ArrayBuffer) {
-                        const blob = new Blob([event.data], {type: 'image/jpeg'});
-                        const url = URL.createObjectURL(blob);
-                        
-                        // Update image src (tracking is already baked into frame!)
-                        const oldUrl = img.src;
-                        img.src = url;
-                        
-                        // Cleanup old blob URL to prevent memory leak
-                        if (oldUrl && oldUrl.startsWith('blob:')) {
-                            URL.revokeObjectURL(oldUrl);
-                        }
-                    }
-                };
-                
-                ws.onerror = (error) => {
-                    console.error(`WebSocket error for camera ${cameraId}:`, error);
-                    if (status) status.textContent = 'Error';
-                    if (indicator) {
-                        indicator.classList.remove('bg-yellow-400', 'bg-green-500');
-                        indicator.classList.add('bg-red-500');
-                    }
-                };
-                
-                ws.onclose = () => {
-                    console.log(`WebSocket closed for camera ${cameraId}`);
-                    if (status) status.textContent = 'Disconnected';
-                    if (indicator) {
-                        indicator.classList.remove('bg-yellow-400', 'bg-green-500');
-                        indicator.classList.add('bg-red-500');
+            // Step 1: Start WebRTC stream (30 FPS raw video)
+            async function startWebRTC() {
+                try {
+                    // Get RTSP URL for this camera from the backend
+                    const cameraInfoResponse = await fetch(`/vault-rooms/camera/${cameraId}/info`);
+                    if (!cameraInfoResponse.ok) {
+                        throw new Error(`Failed to get camera info: ${cameraInfoResponse.status}`);
                     }
                     
-                    // Attempt reconnection
-                    if (reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++;
-                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-                        console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
-                        setTimeout(connect, delay);
+                    const cameraInfo = await cameraInfoResponse.json();
+                    const rtspUrl = cameraInfo.rtsp_url;
+                    
+                    if (!rtspUrl) {
+                        throw new Error('No RTSP URL found for camera');
                     }
+                    
+                    console.log(`Starting WebRTC for camera ${cameraId} with RTSP: ${rtspUrl}`);
+                    
+                    // Create RTCPeerConnection
+                    const pc = new RTCPeerConnection({
+                        iceServers: [
+                            {urls: 'stun:stun.l.google.com:19302'},
+                            {urls: 'stun:stun1.l.google.com:19302'},
+                            {urls: 'stun:stun2.l.google.com:19302'}
+                        ],
+                        iceTransportPolicy: 'all'
+                    });
+                    
+                    // Add transceiver to receive video
+                    pc.addTransceiver('video', {'direction': 'recvonly'});
+                    
+                    // Handle incoming video track (set BEFORE creating offer)
+                    pc.ontrack = (event) => {
+                        console.log(`✅ Received video track for camera ${cameraId}`, event.track);
+                        console.log(`Track readyState: ${event.track.readyState}, enabled: ${event.track.enabled}`);
+                        
+                        const stream = event.streams[0] || new MediaStream([event.track]);
+                        console.log(`Stream has ${stream.getTracks().length} tracks`);
+                        
+                        // Create video element dynamically for WebRTC (img tag won't work)
+                        const videoElement = document.createElement('video');
+                        videoElement.id = `${videoId}-webrtc`;
+                        videoElement.autoplay = true;
+                        videoElement.playsInline = true;
+                        videoElement.muted = true; // Mute to avoid audio issues
+                        videoElement.className = 'w-full aspect-video bg-black object-contain';
+                        videoElement.style.display = 'block';
+                        videoElement.srcObject = stream;
+                        
+                        // Add error handler
+                        videoElement.onerror = (e) => {
+                            console.error(`Video element error for camera ${cameraId}:`, e);
+                        };
+                        
+                        // Replace img with video
+                        img.parentElement.replaceChild(videoElement, img);
+                        console.log(`Video element replaced for camera ${cameraId}`);
+                        
+                        // Set canvas size to match video
+                        videoElement.onloadedmetadata = () => {
+                            canvas.width = videoElement.videoWidth;
+                            canvas.height = videoElement.videoHeight;
+                            console.log(`Canvas size set: ${canvas.width}x${canvas.height}`);
+                            
+                            // Start drawing tracking overlay
+                            requestAnimationFrame(drawTrackingOverlay);
+                        };
+                        
+                        // Force play
+                        videoElement.play().then(() => {
+                            console.log(`Video playing for camera ${cameraId}`);
+                        }).catch(err => {
+                            console.error(`Failed to play video for camera ${cameraId}:`, err);
+                        });
+                        
+                        if (status) status.textContent = 'Live';
+                        if (indicator) indicator.className = 'w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse';
+                    };
+                    
+                    pc.oniceconnectionstatechange = () => {
+                        console.log(`ICE Connection State for camera ${cameraId}: ${pc.iceConnectionState}`);
+                        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+                            if (status) status.textContent = 'Disconnected';
+                            if (indicator) indicator.className = 'w-1.5 h-1.5 bg-red-500 rounded-full';
+                        } else if (pc.iceConnectionState === 'connected') {
+                            if (status) status.textContent = 'Connected';
+                            if (indicator) indicator.className = 'w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse';
+                        }
+                    };
+                    
+                    // Create offer
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    
+                    // Send offer to RTSPtoWebRTC server via nginx proxy
+                    const sdp64 = btoa(offer.sdp);
+                    
+                    const formData = new FormData();
+                    formData.append('url', rtspUrl);
+                    formData.append('sdp64', sdp64);
+                    
+                    const response = await fetch('https://aqlinks.com/rtsp/stream', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`RTSPtoWebRTC returned ${response.status}: ${errorText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Received answer from RTSPtoWebRTC - tracks:', data.tracks);
+                    
+                    // Set remote description with server's answer
+                    const answerSdp = atob(data.sdp64);
+                    await pc.setRemoteDescription(new RTCSessionDescription({
+                        type: 'answer',
+                        sdp: answerSdp
+                    }));
+                    
+                    console.log(`WebRTC connection established for camera ${cameraId}`);
+                    useWebRTC = true;
+                    
+                } catch (error) {
+                    console.error(`WebRTC error for camera ${cameraId}:`, error);
+                    if (status) status.textContent = 'Error';
+                    if (indicator) indicator.className = 'w-1.5 h-1.5 bg-red-500 rounded-full';
+                    useWebRTC = false;
+                }
+            }
+            
+            // Step 2: Connect WebSocket for tracking data (4-6 FPS)
+            function connectTrackingWebSocket() {
+                trackingWs = new WebSocket(WS_URL);
+                
+                trackingWs.onopen = () => {
+                    console.log(`Tracking WebSocket connected for camera ${cameraId}`);
+                };
+                
+                trackingWs.onmessage = (event) => {
+                    try {
+                        trackingData = JSON.parse(event.data);
+                        // Update people count
+                        const countEl = document.getElementById(`${videoId}-count`);
+                        if (countEl && trackingData.stats) {
+                            countEl.textContent = trackingData.stats.active_tracks;
+                        }
+                    } catch (error) {
+                        console.error('Error parsing tracking data:', error);
+                    }
+                };
+                
+                trackingWs.onerror = (error) => {
+                    console.error(`Tracking WebSocket error for camera ${cameraId}:`, error);
+                };
+                
+                trackingWs.onclose = () => {
+                    console.log(`Tracking WebSocket closed for camera ${cameraId}, reconnecting...`);
+                    setTimeout(connectTrackingWebSocket, 3000);
                 };
             }
             
-            connect();
+            // Step 3: Draw tracking overlay on canvas (runs at 30 FPS for smooth animation)
+            function drawTrackingOverlay() {
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw bounding boxes from tracking data
+                if (trackingData && trackingData.tracks) {
+                    trackingData.tracks.forEach(track => {
+                        const [x1, y1, x2, y2] = track.bbox;
+                        const width = x2 - x1;
+                        const height = y2 - y1;
+                        
+                        // Scale coordinates to canvas size
+                        const videoElement = document.getElementById(`${videoId}-webrtc`);
+                        if (videoElement && videoElement.videoWidth > 0) {
+                            const scaleX = canvas.width / videoElement.videoWidth;
+                            const scaleY = canvas.height / videoElement.videoHeight;
+                            
+                            const scaledX = x1 * scaleX;
+                            const scaledY = y1 * scaleY;
+                            const scaledW = width * scaleX;
+                            const scaledH = height * scaleY;
+                            
+                            // Draw box
+                            ctx.strokeStyle = track.source === 'bytetrack' ? '#00ff00' : '#00ffff';
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(scaledX, scaledY, scaledW, scaledH);
+                            
+                            // Draw label background
+                            const label = `ID: ${track.track_id} (${Math.round(track.confidence * 100)}%)`;
+                            ctx.font = '16px Arial';
+                            const textWidth = ctx.measureText(label).width;
+                            ctx.fillStyle = track.source === 'bytetrack' ? 'rgba(0, 255, 0, 0.8)' : 'rgba(0, 255, 255, 0.8)';
+                            ctx.fillRect(scaledX, scaledY - 25, textWidth + 10, 25);
+                            
+                            // Draw label text
+                            ctx.fillStyle = '#000000';
+                            ctx.fillText(label, scaledX + 5, scaledY - 7);
+                        }
+                    });
+                }
+                
+                // Continue animation loop
+                requestAnimationFrame(drawTrackingOverlay);
+            }
             
-            // Store WebSocket for cleanup
-            if (!window.cameraWebSockets) window.cameraWebSockets = {};
-            window.cameraWebSockets[cameraId] = ws;
+            // Start both streams
+            startWebRTC();
+            connectTrackingWebSocket();
         }
 
         function toggleFullscreen(videoId) {
-            const img = document.getElementById(videoId);
+            // Try to find video element first (WebRTC), then fallback to img (MJPEG)
+            const videoElement = document.getElementById(`${videoId}-webrtc`) || document.getElementById(videoId);
+            if (!videoElement) {
+                console.error(`No video element found for ${videoId}`);
+                return;
+            }
+            
             if (!document.fullscreenElement) {
-                img.parentElement.requestFullscreen();
+                videoElement.parentElement.requestFullscreen();
             } else {
                 document.exitFullscreen();
             }
@@ -440,24 +691,21 @@
 
         // Click-to-rename functionality
         let selectedPerson = null;
-        let currentPeopleData = {};  // Cache people data per camera
+        let currentPeopleData = {};
         let peopleDataInterval = null;
 
-        // Fetch people data periodically
+        // Fetch and update people list
         async function updatePeopleData() {
             try {
-                console.log(`🔄 Fetching people data for room ${roomId}...`);
                 const response = await fetch(`/vault-rooms/${roomId}/people`);
-                
-                if (!response.ok) {
-                    console.error(`❌ Failed to fetch people data: ${response.status} ${response.statusText}`);
-                    return;
-                }
+                if (!response.ok) return;
                 
                 const data = await response.json();
-                console.log(`📊 People API response:`, data);
                 
-                // Group by camera ID
+                // Update sidebar
+                updatePeopleSidebar(data.people, data.people_count);
+                
+                // Group by camera for any future use
                 currentPeopleData = {};
                 data.people.forEach(person => {
                     if (!currentPeopleData[person.camera_id]) {
@@ -465,14 +713,122 @@
                     }
                     currentPeopleData[person.camera_id].push(person);
                 });
-                
-                console.log(`📦 Grouped people data:`, currentPeopleData);
-                console.log(`👥 Total unique people: ${data.people_count}`);
-                
-                // Draw clickable overlays
-                drawClickableOverlays();
             } catch (error) {
-                console.error('❌ Error fetching people data:', error);
+                console.error('Error fetching people:', error);
+            }
+        }
+
+        // Update people sidebar with current detections
+        function updatePeopleSidebar(people, count) {
+            const peopleList = document.getElementById('peopleList');
+            if (!peopleList || !peopleCount) return;
+            
+            peopleCount.textContent = `${count} ${count === 1 ? 'person' : 'people'} detected`;
+            
+            if (people.length === 0) {
+                peopleList.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
+                        <p class="text-sm">No people detected</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Remove duplicates by global_id
+            const uniquePeople = [];
+            const seen = new Set();
+            people.forEach(person => {
+                if (!seen.has(person.global_id)) {
+                    seen.add(person.global_id);
+                    uniquePeople.push(person);
+                }
+            });
+            
+            peopleList.innerHTML = uniquePeople.map(person => {
+                const displayName = person.name || `Person ${person.global_id}`;
+                const initial = displayName.charAt(0).toUpperCase();
+                
+                return `
+                <div class="person-item group bg-white hover:bg-gray-50 rounded-lg p-3 transition-all duration-200 border border-gray-200 hover:border-gray-300">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3 flex-1">
+                            <div class="w-10 h-10 rounded-full bg-gray-900 flex items-center justify-center text-white font-light text-sm">
+                                ${initial}
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-normal text-gray-900 person-name tracking-tight text-sm" data-id="${person.global_id}">${displayName}</span>
+                                    <button onclick="enableEditName(${person.global_id}, '${displayName}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity duration-200">
+                                        <svg class="w-3.5 h-3.5 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-0.5 font-light">ID: ${person.global_id} • Camera ${person.camera_id}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        // Enable inline name editing
+        function enableEditName(globalId, currentName) {
+            const nameSpan = document.querySelector(`.person-name[data-id="${globalId}"]`);
+            if (!nameSpan) return;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentName;
+            input.className = 'px-3 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 text-sm font-normal bg-white text-gray-900';
+            input.style.width = '140px';
+            
+            // Save on Enter, cancel on Escape
+            input.onkeydown = async (e) => {
+                if (e.key === 'Enter') {
+                    const newName = input.value.trim();
+                    if (newName && newName !== currentName) {
+                        await saveName(globalId, newName);
+                    }
+                    await updatePeopleData();
+                } else if (e.key === 'Escape') {
+                    await updatePeopleData();
+                }
+            };
+            
+            // Save on blur
+            input.onblur = async () => {
+                const newName = input.value.trim();
+                if (newName && newName !== currentName) {
+                    await saveName(globalId, newName);
+                }
+                await updatePeopleData();
+            };
+            
+            nameSpan.replaceWith(input);
+            input.focus();
+            input.select();
+        }
+
+        // Save person name
+        async function saveName(globalId, newName) {
+            try {
+                const response = await fetch(`/vault-rooms/${roomId}/rename-person`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ global_id: globalId, name: newName })
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ Renamed person ${globalId} to "${newName}"`);
+                } else {
+                    console.error('Failed to rename person');
+                }
+            } catch (error) {
+                console.error('Error saving name:', error);
             }
         }
 
@@ -633,11 +989,22 @@
             nameInput.value = currentName;
             modal.classList.remove('hidden');
             nameInput.focus();
+            
+            // Pause updates while modal is open
+            if (peopleUpdateInterval) {
+                clearInterval(peopleUpdateInterval);
+                peopleUpdateInterval = null;
+            }
         }
 
         function closeRenameModal() {
             document.getElementById('renameModal').classList.add('hidden');
             selectedPerson = null;
+            
+            // Resume updates when modal is closed
+            if (!peopleUpdateInterval) {
+                peopleUpdateInterval = setInterval(updatePeopleData, 3000); // 3 seconds refresh
+            }
         }
 
         async function savePersonName() {
@@ -677,46 +1044,10 @@
             }
         }
 
-        // Start people data updates
-        console.log('🚀 Starting click-to-rename system...');
-        console.log(`📍 Room ID: ${roomId}`);
+        // Start updates with slower refresh rate
+        let peopleUpdateInterval;
         updatePeopleData();
-        peopleDataInterval = setInterval(updatePeopleData, 1000);  // Update every second
-        console.log('✅ Click-to-rename system initialized');
+        peopleUpdateInterval = setInterval(updatePeopleData, 3000); // 3 seconds refresh
     </script>
-
-    <!-- Rename Modal -->
-    <div id="renameModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl p-6 w-96">
-            <h3 class="text-xl font-semibold mb-4">Rename Person</h3>
-            <p class="text-sm text-gray-600 mb-4">Current name: <span id="currentPersonName" class="font-medium"></span></p>
-            
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">New Name</label>
-                <input 
-                    type="text" 
-                    id="personNameInput" 
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter person's name"
-                    onkeypress="if(event.key === 'Enter') savePersonName()"
-                />
-            </div>
-            
-            <div class="flex justify-end space-x-3">
-                <button 
-                    onclick="closeRenameModal()" 
-                    class="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                    Cancel
-                </button>
-                <button 
-                    onclick="savePersonName()" 
-                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-                >
-                    Save
-                </button>
-            </div>
-        </div>
-    </div>
 </body>
 </html>

@@ -1,6 +1,6 @@
 """
-People Detection and Tracking Service using YOLO11 + ByteTrack
-Professional implementation with optional DeepSORT ReID for cross-camera matching
+People Detection and Tracking Service using YOLO11 + ByteTrack + DeepSORT
+Exactly matching BRINKSv2 implementation
 """
 
 import cv2
@@ -16,36 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 class TrackingService:
-    """ByteTrack for tracking + optional DeepSORT ReID for cross-camera deduplication"""
+    """ByteTrack (30 FPS) + DeepSORT ReID fallback - BRINKSv2 style"""
     
-    def __init__(self, conf_threshold: float = 0.5):
-        logger.info("Initializing tracking service...")
+    def __init__(self, conf_threshold: float = 0.5, bytetrack_threshold: float = 0.6):
+        logger.info("Initializing tracking service (BRINKSv2 style)...")
         self.device = self._detect_device()
         self.conf_threshold = conf_threshold
+        self.bytetrack_threshold = bytetrack_threshold
         self.byte_trackers = {}
-        self.deepsort_tracker = None  # Created on-demand for ReID
+        self.deepsort_trackers = {}
         self.camera_tracks = defaultdict(lambda: {
-            'count': 0, 
-            'tracks': {},  # {track_id: {bbox, confidence, last_seen, global_id, name}}
-            'last_update': None,
-            'last_frame': None
+            'count': 0, 'tracks': {}, 'history': deque(maxlen=100),
+            'last_update': None, 'bytetrack_confident': 0,
+            'deepsort_assisted': 0, 'last_frame': None
         })
-        
-        # Cross-camera tracking
-        self.global_person_ids = {}  # {(camera_id, track_id): global_id}
-        self.global_person_names = {}  # {global_id: name}
-        self.global_embeddings = {}  # {global_id: embedding}
-        self.next_global_id = 1
-        self.similarity_threshold = 0.75
-        
-        # Name pool
-        self.name_pool = [
-            "Alex", "Blake", "Casey", "Drew", "Ellis", "Finley", "Gray", "Harper",
-            "Indigo", "Jordan", "Kai", "Logan", "Morgan", "Navy", "Oakley", "Parker",
-            "Quinn", "River", "Sage", "Taylor", "Unity", "Vale", "Winter", "Zen"
-        ]
-        self.used_name_index = 0
-        
         logger.info("✅ Tracking service initialized")
     
     def _detect_device(self) -> str:
@@ -59,7 +43,6 @@ class TrackingService:
         return 'cpu'
     
     def _get_bytetrack_tracker(self, camera_id: int) -> sv.ByteTrack:
-        """Get or create ByteTrack tracker for camera"""
         if camera_id not in self.byte_trackers:
             self.byte_trackers[camera_id] = sv.ByteTrack(
                 track_activation_threshold=0.5,
@@ -67,239 +50,196 @@ class TrackingService:
                 minimum_matching_threshold=0.8,
                 frame_rate=30
             )
+            logger.info(f"Created ByteTrack tracker for camera {camera_id}")
         return self.byte_trackers[camera_id]
     
-    def _get_deepsort_tracker(self) -> DeepSort:
-        """Get or create shared DeepSORT tracker for ReID"""
-        if self.deepsort_tracker is None:
+    def _get_deepsort_tracker(self, camera_id: int) -> DeepSort:
+        if camera_id not in self.deepsort_trackers:
             embedder_gpu = (self.device == 'cuda')
-            self.deepsort_tracker = DeepSort(
+            self.deepsort_trackers[camera_id] = DeepSort(
                 max_age=30, n_init=3, nms_max_overlap=0.7,
                 max_cosine_distance=0.3, nn_budget=100,
                 embedder="mobilenet", embedder_gpu=embedder_gpu,
                 embedder_wts=None, polygon=False, today=None
             )
-            logger.info(f"Created DeepSORT for ReID (GPU: {embedder_gpu})")
-        return self.deepsort_tracker
+            if embedder_gpu:
+                logger.info(f"🎮 DeepSORT using GPU for camera {camera_id}")
+            logger.info(f"Created DeepSORT tracker for camera {camera_id}")
+        return self.deepsort_trackers[camera_id]
     
     def track_people(self, camera_id: int, frame: np.ndarray, yolo_service) -> Dict:
         """
-        Detect and track people using ByteTrack
+        Detect and track people using ByteTrack (30 FPS) with DeepSORT fallback
+        EXACTLY like brinksv2: does detection + tracking in one call
         
         Args:
             camera_id: Camera identifier
             frame: Input frame
-            yolo_service: YOLO service instance
+            yolo_service: YOLO service instance for detection
             
         Returns:
             Dictionary with tracking information
         """
-        # Detect people with YOLO
+        # Step 1: Detect people in current frame using YOLO
         person_count, detections_list, detections_sv = yolo_service.detect_people(frame)
         
-        if len(detections_sv) == 0:
-            self.camera_tracks[camera_id]['tracks'] = {}
-            self.camera_tracks[camera_id]['count'] = 0
-            return {'camera_id': camera_id, 'people_count': 0, 'tracks': {}}
+        logger.debug(f"🔍 Camera {camera_id}: YOLO detected {len(detections_sv)} people")
         
-        # Track with ByteTrack
+        # Step 2: Apply ByteTrack tracking (primary tracker)
         byte_tracker = self._get_bytetrack_tracker(camera_id)
-        tracked = byte_tracker.update_with_detections(detections_sv)
+        tracked_detections = byte_tracker.update_with_detections(detections_sv)
         
-        # Build tracks dictionary
-        tracks = {}
-        for i, track_id in enumerate(tracked.tracker_id):
-            bbox = tracked.xyxy[i]
-            confidence = tracked.confidence[i]
+        logger.debug(f"📍 Camera {camera_id}: ByteTrack returned {len(tracked_detections.tracker_id)} tracked objects")
+        
+        uncertain_detections = []
+        confident_tracks = {}
+        
+        for i, track_id in enumerate(tracked_detections.tracker_id):
+            confidence = tracked_detections.confidence[i]
+            bbox = tracked_detections.xyxy[i]
             
-            tracks[int(track_id)] = {
-                'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
-                'confidence': float(confidence),
-                'last_seen': datetime.now()
-            }
+            if confidence >= self.bytetrack_threshold:
+                confident_tracks[int(track_id)] = {
+                    'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
+                    'confidence': float(confidence),
+                    'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
+                    'source': 'bytetrack',
+                    'last_seen': datetime.now()
+                }
+                self.camera_tracks[camera_id]['bytetrack_confident'] += 1
+            else:
+                uncertain_detections.append({
+                    'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
+                    'confidence': float(confidence),
+                    'bytetrack_id': int(track_id)
+                })
         
-        # Store for cross-camera deduplication
-        self.camera_tracks[camera_id]['tracks'] = tracks
-        self.camera_tracks[camera_id]['count'] = len(tracks)
+        if len(uncertain_detections) > 0:
+            deepsort_tracker = self._get_deepsort_tracker(camera_id)
+            deepsort_input = []
+            for det in uncertain_detections:
+                bbox = det['bbox']
+                deepsort_bbox = [bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]]
+                deepsort_input.append((deepsort_bbox, det['confidence'], 'person'))
+            
+            deepsort_tracks = deepsort_tracker.update_tracks(deepsort_input, frame=frame)
+            
+            for track in deepsort_tracks:
+                if track.is_confirmed():
+                    bbox = track.to_ltrb()
+                    try:
+                        deepsort_key = -int(track.track_id)
+                    except:
+                        deepsort_key = f"ds_{track.track_id}"
+                    
+                    confident_tracks[deepsort_key] = {
+                        'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
+                        'confidence': track.get_det_conf() if hasattr(track, 'get_det_conf') else 0.5,
+                        'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
+                        'source': 'deepsort',
+                        'last_seen': datetime.now()
+                    }
+                    self.camera_tracks[camera_id]['deepsort_assisted'] += 1
+        
+        self.camera_tracks[camera_id]['tracks'] = confident_tracks
+        self.camera_tracks[camera_id]['count'] = len(confident_tracks)
         self.camera_tracks[camera_id]['last_update'] = datetime.now()
-        self.camera_tracks[camera_id]['last_frame'] = frame
+        self.camera_tracks[camera_id]['last_frame'] = frame  # Store frame for visualization
+        self.camera_tracks[camera_id]['history'].append({
+            'timestamp': datetime.now().isoformat(),
+            'count': len(confident_tracks)
+        })
         
         return {
             'camera_id': camera_id,
-            'people_count': len(tracks),
-            'tracks': tracks
+            'people_count': len(confident_tracks),
+            'detections': detections_list,
+            'tracks': confident_tracks,
+            'timestamp': datetime.now().isoformat(),
+            'bytetrack_confident': self.camera_tracks[camera_id]['bytetrack_confident'],
+            'deepsort_assisted': self.camera_tracks[camera_id]['deepsort_assisted']
         }
     
     def draw_tracks(self, frame: np.ndarray, camera_id: int) -> np.ndarray:
-        """Draw bounding boxes with IDs/names on frame"""
+        """
+        Draw bounding boxes and IDs on frame - BRINKSv2 style
+        Args: frame first, then camera_id (matches brinksv2)
+        """
         annotated = frame.copy()
         tracks = self.camera_tracks[camera_id].get('tracks', {})
+        people_count = self.camera_tracks[camera_id].get('count', 0)
+        
+        logger.debug(f"📊 Drawing {len(tracks)} tracks for camera {camera_id}, people_count={people_count}")
         
         for track_id, track_data in tracks.items():
             bbox = track_data['bbox']
-            global_id = track_data.get('global_id')
-            person_name = track_data.get('name')
+            source = track_data.get('source', 'unknown')
+            color = (0, 255, 0) if source == 'bytetrack' else (255, 165, 0)
             
-            # Determine label
-            if person_name:
-                label = person_name
-                color = (0, 255, 255)  # Yellow
-            elif global_id:
-                label = f"ID {global_id}"
-                color = (0, 255, 255)
-            else:
-                label = f"Track {track_id}"
-                color = (0, 255, 0)  # Green
-            
-            # Draw box
+            # Draw bounding box
             cv2.rectangle(annotated, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
             
-            # Draw label
-            cv2.putText(annotated, label, (bbox[0], bbox[1] - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            try:
+                abs_track_id = abs(int(track_id)) if not isinstance(track_id, str) else track_id.replace("ds_", "")
+            except:
+                abs_track_id = "?"
+            
+            label = f"ID:{abs_track_id}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            (label_width, label_height), _ = cv2.getTextSize(label, font, 0.6, 2)
+            label_y = max(bbox[1] - 8, label_height + 13)
+            
+            # Draw label background
+            cv2.rectangle(annotated, (bbox[0], label_y - label_height - 5),
+                         (bbox[0] + label_width + 10, label_y + 3), color, -1)
+            cv2.putText(annotated, label, (bbox[0] + 5, label_y - 1),
+                       font, 0.6, (0, 0, 0), 2)
         
-        # Draw count
-        cv2.putText(annotated, f"People: {len(tracks)}", (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # Draw count overlay
+        cv2.rectangle(annotated, (5, 5), (200, 35), (0, 0, 0), -1)
+        cv2.putText(annotated, f"Tracks: {people_count}", (10, 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
+        logger.debug(f"✅ Drew {len(tracks)} bounding boxes on frame for camera {camera_id}")
         return annotated
     
-    
-    def _cosine_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
-        """Calculate cosine similarity"""
-        return np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
-    
-    def set_person_name(self, global_id: int, name: str) -> bool:
-        """Assign a name to a person by global ID"""
-        if global_id in self.global_person_names:
-            self.global_person_names[global_id] = name
-            
-            # Update all tracks with this global_id
-            for camera_data in self.camera_tracks.values():
-                for track_data in camera_data.get('tracks', {}).values():
-                    if track_data.get('global_id') == global_id:
-                        track_data['name'] = name
-            
-            return True
-        return False
-    
-    
-    def get_all_person_names(self) -> Dict[int, str]:
-        """Get all person names"""
-        return self.global_person_names.copy()
-    
-    def generate_embeddings_for_camera(self, camera_id: int):
-        """
-        Generate ReID embeddings for all current tracks in a camera
-        Called periodically (e.g., every 2 seconds) for cross-camera matching
-        """
+    def get_statistics(self, camera_id: int) -> Dict:
         if camera_id not in self.camera_tracks:
-            return
-        
+            return {"total_frames": 0, "active_tracks": 0, "tracks_created": 0, "avg_processing_time": 0.0}
         camera_data = self.camera_tracks[camera_id]
-        tracks = camera_data.get('tracks', {})
-        frame = camera_data.get('last_frame')
-        
-        if frame is None or len(tracks) == 0:
-            return
-        
-        # Use DeepSORT to generate embeddings
-        deepsort = self._get_deepsort_tracker()
-        deepsort_input = []
-        track_ids = []
-        
-        for track_id, track_data in tracks.items():
-            bbox = track_data['bbox']
-            # Convert xyxy to xywh
-            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            deepsort_input.append(([bbox[0], bbox[1], w, h], track_data['confidence'], 'person'))
-            track_ids.append(track_id)
-        
-        # Generate embeddings
-        ds_tracks = deepsort.update_tracks(deepsort_input, frame=frame)
-        
-        # Store embeddings
-        embeddings_stored = 0
-        for i, ds_track in enumerate(ds_tracks):
-            if ds_track.is_confirmed() and i < len(track_ids):
-                if hasattr(ds_track, 'get_feature'):
-                    embedding = ds_track.get_feature()
-                    if embedding is not None:
-                        track_id = track_ids[i]
-                        # Store in global embeddings with (camera_id, track_id) key
-                        key = (camera_id, track_id)
-                        self.global_embeddings[key] = embedding
-                        embeddings_stored += 1
-        
-        if embeddings_stored > 0:
-            logger.info(f"Generated {embeddings_stored} embeddings for camera {camera_id}")
+        return {
+            "total_frames": len(camera_data['history']),
+            "active_tracks": camera_data['count'],
+            "tracks_created": camera_data['bytetrack_confident'] + camera_data['deepsort_assisted'],
+            "bytetrack_confident": camera_data['bytetrack_confident'],
+            "deepsort_assisted": camera_data['deepsort_assisted'],
+            "avg_processing_time": 0.03
+        }
     
-    def get_unique_people_count_across_cameras(self, camera_ids: List[int]) -> int:
-        """
-        Deduplicate people across cameras using embeddings
-        Simple max count fallback if no embeddings
-        """
-        # Collect all tracks with embeddings
-        all_tracks = []
+    def get_people_in_room(self, camera_ids: List[int]) -> List[Dict]:
+        """Get all people currently tracked in the given cameras"""
+        people_list = []
+        seen_track_ids = set()
         
         for camera_id in camera_ids:
             if camera_id not in self.camera_tracks:
                 continue
             
-            tracks = self.camera_tracks[camera_id].get('tracks', {})
-            for track_id, track_data in tracks.items():
-                key = (camera_id, track_id)
-                if key in self.global_embeddings:
-                    all_tracks.append({
-                        'camera_id': camera_id,
-                        'track_id': track_id,
-                        'embedding': self.global_embeddings[key],
-                        'bbox': track_data['bbox']
+            camera_data = self.camera_tracks[camera_id]
+            tracks = camera_data.get('tracks', {})
+            
+            for track_id, track_info in tracks.items():
+                if track_id not in seen_track_ids:
+                    people_list.append({
+                        "track_id": int(track_id) if isinstance(track_id, int) else str(track_id),
+                        "camera_id": camera_id,
+                        "confidence": track_info.get('confidence', 0.0),
+                        "source": track_info.get('source', 'unknown'),
+                        "last_seen": track_info.get('last_seen', datetime.now()).isoformat() if hasattr(track_info.get('last_seen'), 'isoformat') else str(track_info.get('last_seen'))
                     })
+                    seen_track_ids.add(track_id)
         
-        # No embeddings - fallback to max count
-        if len(all_tracks) == 0:
-            counts = [self.camera_tracks[cid].get('count', 0) for cid in camera_ids if cid in self.camera_tracks]
-            return max(counts) if counts else 0
-        
-        # Cluster by similarity
-        unique_people = []
-        
-        for track in all_tracks:
-            is_duplicate = False
-            matched_id = None
-            
-            for unique in unique_people:
-                sim = self._cosine_similarity(track['embedding'], unique['embedding'])
-                if sim > self.similarity_threshold:
-                    is_duplicate = True
-                    matched_id = unique['global_id']
-                    break
-            
-            if not is_duplicate:
-                # New person
-                global_id = self.next_global_id
-                self.next_global_id += 1
-                
-                if self.used_name_index < len(self.name_pool):
-                    name = self.name_pool[self.used_name_index]
-                    self.used_name_index += 1
-                else:
-                    name = f"Person {global_id}"
-                
-                self.global_person_names[global_id] = name
-                track['global_id'] = global_id
-                track['name'] = name
-                unique_people.append(track)
-            else:
-                global_id = matched_id
-                name = self.global_person_names.get(global_id, f"Person {global_id}")
-            
-            # Update track with global ID
-            self.camera_tracks[track['camera_id']]['tracks'][track['track_id']]['global_id'] = global_id
-            self.camera_tracks[track['camera_id']]['tracks'][track['track_id']]['name'] = name
-        
-        return len(unique_people)
+        return people_list
     
     def reset(self, camera_id: int = None):
         if camera_id:

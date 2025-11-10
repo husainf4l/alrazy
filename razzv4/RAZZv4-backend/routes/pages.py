@@ -42,6 +42,11 @@ async def test_webrtc_page(request: Request):
     """Test page for WebRTC camera streaming"""
     return templates.TemplateResponse("test-webrtc.html", {"request": request})
 
+@router.get("/test-camera", response_class=HTMLResponse)
+async def test_camera(request: Request):
+    """Test camera streaming page"""
+    return templates.TemplateResponse("test-camera.html", {"request": request})
+
 @router.get("/room-designer/{room_id}")
 async def room_designer_page(request: Request, room_id: int):
     return templates.TemplateResponse("room-designer.html", {"request": request, "room_id": room_id})

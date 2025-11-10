@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -76,3 +77,62 @@ class Camera(Base):
     
     # Relationship
     vault_room = relationship("VaultRoom", back_populates="cameras")
+
+
+class Person(Base):
+    """Enrolled persons in the system (gallery)"""
+    __tablename__ = "persons"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    employee_id = Column(String(100), nullable=True, index=True)
+    department = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    company = relationship("Company", backref="persons")
+    face_embeddings = relationship("FaceEmbedding", back_populates="person", cascade="all, delete-orphan")
+    tracking_events = relationship("TrackingEvent", back_populates="person")
+
+
+class FaceEmbedding(Base):
+    """Face embeddings for enrolled persons"""
+    __tablename__ = "face_embeddings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True)
+    embedding = Column(Vector(512), nullable=False)  # ArcFace 512-dimensional embedding
+    image_path = Column(String(500), nullable=True)  # Path to face image
+    quality_score = Column(Float, default=0.0)  # Face quality (0-1)
+    source = Column(String(50), default="enrollment")  # "enrollment", "camera", etc.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    person = relationship("Person", back_populates="face_embeddings")
+
+
+class TrackingEvent(Base):
+    """Log of person tracking events (entry, exit, motion)"""
+    __tablename__ = "tracking_events"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("vault_rooms.id"), nullable=False, index=True)
+    camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False, index=True)
+    person_id = Column(Integer, ForeignKey("persons.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type = Column(String(50), nullable=False, index=True)  # "entry", "exit", "motion", "unauthorized"
+    track_id = Column(Integer, nullable=True)  # Tracker ID from YOLO
+    confidence = Column(Float, nullable=True)  # Recognition confidence (0-1)
+    bbox = Column(JSON, nullable=True)  # Bounding box {x, y, w, h}
+    event_metadata = Column(JSON, nullable=True)  # Additional event data (renamed from 'metadata' to avoid SQLAlchemy conflict)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    
+    # Relationships
+    room = relationship("VaultRoom", backref="tracking_events")
+    camera = relationship("Camera", backref="tracking_events")
+    person = relationship("Person", back_populates="tracking_events")

@@ -125,8 +125,7 @@ class YOLOService:
             
         except Exception as e:
             logger.error(f"Error during YOLO inference: {e}")
-            # Return empty detections in correct format
-            return 0, [], sv.Detections.empty()
+            return 0, []
     
     def annotate_frame(self, frame: np.ndarray, detections: List[dict]) -> np.ndarray:
         """

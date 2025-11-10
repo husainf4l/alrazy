@@ -1,10 +1,14 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import uvicorn
 import logging
-import asyncio
 import cv2
+import numpy as np
+import time
+import json
+import asyncio
 
 # Import routers
 from routes.pages import router as pages_router
@@ -92,6 +96,140 @@ app.include_router(vault_rooms_router)
 # app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# MJPEG Streaming Endpoint - Real-time with tracking visualization!
+@app.get("/camera/{camera_id}/stream")
+async def camera_mjpeg_stream(camera_id: int, fps: int = 30):
+    """
+    MJPEG stream endpoint for real-time camera streaming with tracking visualization
+    Streams annotated frames with tracking boxes, IDs, and trails
+    Much lower latency than WebSocket!
+    """
+    if not camera_service or camera_id not in camera_service.processors:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+    
+    processor = camera_service.processors[camera_id]
+    
+    def generate_mjpeg():
+        """Generate MJPEG stream"""
+        frame_interval = 1.0 / min(fps, 30)  # Limit to 30 FPS max
+        
+        while True:
+            start_time = time.time()
+            
+            try:
+                if processor.last_annotated_frame is not None:
+                    frame = processor.last_annotated_frame.copy()
+                else:
+                    # Waiting frame
+                    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(frame, f"Waiting for camera {camera_id}...", (50, 240),
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                
+                # Encode as JPEG (quality 70 for balance)
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if not ret:
+                    continue
+                
+                frame_bytes = buffer.tobytes()
+                
+                # Yield frame in MJPEG format
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                
+                # Control frame rate
+                elapsed = time.time() - start_time
+                sleep_time = max(0, frame_interval - elapsed)
+                time.sleep(sleep_time)
+                
+            except Exception as e:
+                logger.error(f"Error in MJPEG stream for camera {camera_id}: {e}")
+                time.sleep(0.1)
+    
+    return StreamingResponse(
+        generate_mjpeg(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+# WebSocket endpoint for tracking data only (4-6 FPS from YOLO)
+@app.websocket("/ws/tracking/{camera_id}")
+async def websocket_tracking_endpoint(websocket: WebSocket, camera_id: int):
+    """
+    WebSocket endpoint that sends only tracking data (bounding boxes, IDs, etc.)
+    This runs at YOLO detection rate (4-6 FPS) and is overlayed on WebRTC video
+    
+    Data format:
+    {
+        "camera_id": int,
+        "timestamp": float,
+        "tracks": [
+            {
+                "track_id": int,
+                "bbox": [x1, y1, x2, y2],
+                "confidence": float,
+                "center": [x, y],
+                "source": str  // "bytetrack" or "deepsort"
+            }
+        ],
+        "stats": {
+            "fps": float,
+            "active_tracks": int,
+            "frame_count": int
+        }
+    }
+    """
+    await websocket.accept()
+    logger.info(f"WebSocket tracking connection opened for camera {camera_id}")
+    
+    if not camera_service or camera_id not in camera_service.processors:
+        await websocket.send_json({"error": f"Camera {camera_id} not found"})
+        await websocket.close()
+        return
+    
+    processor = camera_service.processors[camera_id]
+    
+    try:
+        while True:
+            # Send tracking data at YOLO detection rate (4-6 FPS)
+            tracks_list = []
+            
+            if processor.last_tracks:
+                for track_id, track_data in processor.last_tracks.items():
+                    tracks_list.append({
+                        "track_id": int(track_id) if isinstance(track_id, int) else str(track_id),
+                        "bbox": track_data.get("bbox", [0, 0, 0, 0]),
+                        "confidence": float(track_data.get("confidence", 0.0)),
+                        "center": track_data.get("center", [0, 0]),
+                        "source": track_data.get("source", "unknown")
+                    })
+            
+            tracking_data = {
+                "camera_id": camera_id,
+                "timestamp": time.time(),
+                "tracks": tracks_list,
+                "stats": {
+                    "fps": round(processor.fps, 2) if hasattr(processor, 'fps') else 0,
+                    "active_tracks": len(tracks_list),
+                    "frame_count": processor.frame_count if hasattr(processor, 'frame_count') else 0
+                }
+            }
+            
+            await websocket.send_json(tracking_data)
+            
+            # Send at ~6 FPS (YOLO detection rate)
+            await asyncio.sleep(0.16)  # ~6 FPS
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket tracking connection closed for camera {camera_id}")
+    except Exception as e:
+        logger.error(f"Error in tracking WebSocket for camera {camera_id}: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
 # Add endpoint to get service status
 @app.get("/api/services/status")
 async def get_services_status():
@@ -113,62 +251,6 @@ async def get_services_status():
             "active_cameras": len(camera_service.processors) if camera_service else 0
         }
     }
-
-
-@app.websocket("/ws/camera/{camera_id}")
-async def websocket_camera_stream(websocket: WebSocket, camera_id: int):
-    """
-    WebSocket endpoint for real-time camera streaming with tracking visualization
-    Streams JPEG frames at 25-30 FPS with baked-in tracking boxes, IDs, and trails
-    """
-    await websocket.accept()
-    logger.info(f"WebSocket connected for camera {camera_id}")
-    
-    try:
-        if not camera_service or camera_id not in camera_service.processors:
-            await websocket.send_json({"error": f"Camera {camera_id} not found"})
-            await websocket.close()
-            return
-        
-        processor = camera_service.processors[camera_id]
-        frame_count = 0
-        target_fps = 25  # Slightly lower than processing for smooth streaming
-        frame_interval = 1.0 / target_fps
-        
-        while True:
-            try:
-                # Get latest annotated frame (with tracking visualization)
-                if processor.last_annotated_frame is not None:
-                    frame = processor.last_annotated_frame.copy()
-                    
-                    # Encode as JPEG (quality 80 for balance)
-                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-                    _, buffer = cv2.imencode('.jpg', frame, encode_param)
-                    
-                    # Send as binary data (no base64 overhead)
-                    await websocket.send_bytes(buffer.tobytes())
-                    frame_count += 1
-                    
-                    if frame_count % 100 == 0:
-                        logger.debug(f"Camera {camera_id}: Sent {frame_count} frames via WebSocket")
-                else:
-                    # Send placeholder if no frame yet
-                    await websocket.send_json({"status": "waiting_for_frame"})
-                
-                # Sleep to maintain target FPS
-                await asyncio.sleep(frame_interval)
-                
-            except WebSocketDisconnect:
-                logger.info(f"WebSocket disconnected for camera {camera_id}")
-                break
-            except Exception as e:
-                logger.error(f"Error streaming camera {camera_id}: {e}")
-                await asyncio.sleep(1)
-                
-    except Exception as e:
-        logger.error(f"WebSocket error for camera {camera_id}: {e}")
-    finally:
-        logger.info(f"WebSocket closed for camera {camera_id}, sent {frame_count} frames")
 
 
 if __name__ == "__main__":
