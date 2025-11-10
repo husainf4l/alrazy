@@ -260,7 +260,11 @@ async def get_room_people_data(room_id: int, db: Session = Depends(get_db)):
         # Get people list from tracking service
         people_list = []
         if tracking_service:
-            people_list = tracking_service.get_people_in_room(camera_ids)
+            raw_people = tracking_service.get_people_in_room(camera_ids)
+            # Remove numpy features for JSON serialization
+            for person in raw_people:
+                person_data = {k: v for k, v in person.items() if k != 'feature'}
+                people_list.append(person_data)
         
         return {
             "room_id": room_id,
@@ -385,7 +389,7 @@ async def accept_webrtc_answer(
 async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
     """
     Get current people count for a vault room
-    Returns total count across all cameras from live tracking
+    Returns deduplicated count across all cameras from live tracking
     """
     try:
         vault_room = db.query(VaultRoom).filter(VaultRoom.id == room_id).first()
@@ -397,7 +401,7 @@ async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
         
         # Get individual camera counts from live tracking
         camera_counts = []
-        total_count = 0
+        camera_ids = []
         
         for camera in vault_room.cameras:
             if camera.is_active:
@@ -407,6 +411,7 @@ async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
                 if camera_service:
                     processor = camera_service.processors.get(camera.id)
                     if processor and processor.is_running:
+                        camera_ids.append(camera.id)
                         # Get count from tracking service
                         if tracking_service:
                             cam_tracks = tracking_service.camera_tracks.get(camera.id, {})
@@ -417,7 +422,12 @@ async def get_room_people_count(room_id: int, db: Session = Depends(get_db)):
                     "camera_name": camera.name,
                     "people_count": people_count
                 })
-                total_count += people_count
+        
+        # Use deduplicated count across all cameras in the room
+        total_count = 0
+        if tracking_service and len(camera_ids) > 0:
+            people_list = tracking_service.get_people_in_room(camera_ids)
+            total_count = len(people_list)
         
         return {
             "room_id": room_id,

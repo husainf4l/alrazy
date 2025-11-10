@@ -45,7 +45,12 @@ class CameraProcessor:
         self.frame_skip = 1  # Process frames at reduced rate
         self.frame_counter = 0
         self.last_process_time = 0
-        self.frame_interval = 1.0 / 5  # 5 FPS target (reduced from 30 to save CPU)
+        self.last_yolo_time = 0  # Last YOLO detection time
+        self.last_deepsort_time = 0  # Last DeepSORT time
+        self.yolo_interval = 1.0 / 15  # 15 FPS for YOLO detection
+        self.bytetrack_interval = 1.0 / 30  # 30 FPS for ByteTrack updates
+        self.deepsort_interval = 1.0 / 2  # 2 FPS for DeepSORT ReID
+        self.last_detections = None  # Cache last YOLO detections for ByteTrack interpolation
         
         logger.info(f"CameraProcessor initialized for camera {camera_id} with tracking={'enabled' if use_tracking else 'disabled'}")
         
@@ -75,6 +80,10 @@ class CameraProcessor:
             # Release existing capture if any
             if self.capture:
                 self.capture.release()
+            
+            # Suppress FFmpeg warnings (harmless H.264 decoding messages from network packet loss)
+            import os
+            os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'  # Quiet mode
             
             # Open RTSP stream
             self.capture = cv2.VideoCapture(self.rtsp_url)
@@ -124,39 +133,60 @@ class CameraProcessor:
                     # Reset failure counter on successful frame
                     consecutive_failures = 0
                     
-                    # Time-based throttling (5 FPS target - reduced to save CPU with multiple cameras)
                     current_time = time.time()
-                    if current_time - self.last_process_time < self.frame_interval:
+                    
+                    # ByteTrack runs at 30 FPS (every frame)
+                    if current_time - self.last_process_time < self.bytetrack_interval:
                         continue  # Skip if not enough time has passed
                     
-                    # Process frame with YOLO + Tracking (BRINKSv2 style: all in one call)
+                    # Process frame with YOLO + Tracking
                     if self.use_tracking and self.tracking_service:
-                        # Track people (does YOLO detection + ByteTrack + DeepSORT internally)
-                        tracking_result = self.tracking_service.track_people(
-                            self.camera_id, frame, self.yolo_service
-                        )
+                        # Determine if we should run YOLO (15 FPS) or just ByteTrack (30 FPS)
+                        run_yolo = (current_time - self.last_yolo_time >= self.yolo_interval)
+                        run_deepsort = (current_time - self.last_deepsort_time >= self.deepsort_interval)
                         
-                        # Store tracking data for WebSocket
-                        camera_state = self.tracking_service.camera_tracks.get(self.camera_id, {})
-                        self.last_tracks = camera_state.get('tracks', {})
+                        if run_yolo:
+                            # Run YOLO detection at 15 FPS
+                            person_count, detections_list, detections_sv = self.yolo_service.detect_people(frame)
+                            self.last_detections = detections_sv
+                            self.last_yolo_time = current_time
+                        else:
+                            # Use cached detections for ByteTrack interpolation at 30 FPS
+                            detections_sv = self.last_detections
                         
-                        # Draw tracking boxes on frame (BRINKSv2: frame first, camera_id second)
-                        annotated_frame = self.tracking_service.draw_tracks(frame, self.camera_id)
-                        
-                        # Store the annotated frame for streaming
-                        self.last_annotated_frame = annotated_frame
-                        person_count = tracking_result['people_count']
-                        
-                        # Update FPS counter
-                        self.frame_count += 1
-                        if self.frame_count % 30 == 0:  # Update FPS every 30 frames
-                            elapsed = current_time - self.last_process_time if self.last_process_time > 0 else 1
-                            self.fps = 30 / elapsed if elapsed > 0 else 0
-                        
-                        # Update last process time
-                        self.last_process_time = current_time
-                        
-                        logger.debug(f"Camera {self.camera_id}: {person_count} people tracked")
+                        # Track people (ByteTrack runs at 30 FPS, DeepSORT at 2 FPS)
+                        if detections_sv is not None and len(detections_sv) > 0:
+                            tracking_result = self.tracking_service.track_people(
+                                self.camera_id, frame, detections_sv, run_deepsort
+                            )
+                            
+                            if run_deepsort:
+                                self.last_deepsort_time = current_time
+                            
+                            # Store tracking data for WebSocket
+                            camera_state = self.tracking_service.camera_tracks.get(self.camera_id, {})
+                            self.last_tracks = camera_state.get('tracks', {})
+                            
+                            # Draw tracking boxes on frame
+                            annotated_frame = self.tracking_service.draw_tracks(frame, self.camera_id)
+                            
+                            # Store the annotated frame for streaming
+                            self.last_annotated_frame = annotated_frame
+                            person_count = tracking_result['people_count']
+                            
+                            # Update FPS counter
+                            self.frame_count += 1
+                            if self.frame_count % 30 == 0:  # Update FPS every 30 frames
+                                elapsed = current_time - self.last_process_time if self.last_process_time > 0 else 1
+                                self.fps = 30 / elapsed if elapsed > 0 else 0
+                            
+                            # Update last process time
+                            self.last_process_time = current_time
+                            
+                            logger.debug(f"Camera {self.camera_id}: {person_count} people tracked (YOLO: {run_yolo}, DeepSORT: {run_deepsort})")
+                        else:
+                            # No detections yet, continue to next frame
+                            continue
                     else:
                         # Fallback to simple counting (with annotation for visualization)
                         person_count, detections_list, detections_sv = self.yolo_service.detect_people(frame)

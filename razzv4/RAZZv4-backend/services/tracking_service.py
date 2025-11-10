@@ -30,6 +30,9 @@ class TrackingService:
             'last_update': None, 'bytetrack_confident': 0,
             'deepsort_assisted': 0, 'last_frame': None
         })
+        # Global ReID for cross-camera tracking
+        self.global_person_id = 0
+        self.global_features = {}  # {global_id: feature_vector}
         logger.info("✅ Tracking service initialized")
     
     def _detect_device(self) -> str:
@@ -67,25 +70,34 @@ class TrackingService:
             logger.info(f"Created DeepSORT tracker for camera {camera_id}")
         return self.deepsort_trackers[camera_id]
     
-    def track_people(self, camera_id: int, frame: np.ndarray, yolo_service) -> Dict:
+    def track_people(self, camera_id: int, frame: np.ndarray, detections_sv, run_deepsort: bool = True) -> Dict:
         """
-        Detect and track people using ByteTrack (30 FPS) with DeepSORT fallback
-        EXACTLY like brinksv2: does detection + tracking in one call
+        Track people using ByteTrack (30 FPS) with optional DeepSORT fallback (2 FPS)
         
         Args:
             camera_id: Camera identifier
             frame: Input frame
-            yolo_service: YOLO service instance for detection
+            detections_sv: Pre-computed YOLO detections (supervision format)
+            run_deepsort: Whether to run DeepSORT for uncertain tracks (2 FPS)
             
         Returns:
             Dictionary with tracking information
         """
-        # Step 1: Detect people in current frame using YOLO
-        person_count, detections_list, detections_sv = yolo_service.detect_people(frame)
+        if detections_sv is None or len(detections_sv) == 0:
+            # No detections, return empty result
+            self.camera_tracks[camera_id]['tracks'] = {}
+            self.camera_tracks[camera_id]['count'] = 0
+            return {
+                'camera_id': camera_id,
+                'people_count': 0,
+                'detections': [],
+                'tracks': {},
+                'timestamp': datetime.now().isoformat()
+            }
         
-        logger.debug(f"🔍 Camera {camera_id}: YOLO detected {len(detections_sv)} people")
+        logger.debug(f"🔍 Camera {camera_id}: Processing {len(detections_sv)} detections")
         
-        # Step 2: Apply ByteTrack tracking (primary tracker)
+        # Step 1: Apply ByteTrack tracking (runs at 30 FPS)
         byte_tracker = self._get_bytetrack_tracker(camera_id)
         tracked_detections = byte_tracker.update_with_detections(detections_sv)
         
@@ -98,12 +110,29 @@ class TrackingService:
             confidence = tracked_detections.confidence[i]
             bbox = tracked_detections.xyxy[i]
             
+            # Extract crop for appearance feature (for all tracks, not just uncertain ones)
+            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+            crop = frame[y1:y2, x1:x2]
+            
+            # Get DeepSORT embedder to extract feature
+            if crop.size > 0:
+                try:
+                    deepsort_tracker = self._get_deepsort_tracker(camera_id)
+                    # Extract appearance feature using DeepSORT's embedder
+                    feature = deepsort_tracker.embedder.predict([crop])[0] if hasattr(deepsort_tracker, 'embedder') else None
+                except Exception as e:
+                    logger.warning(f"Failed to extract feature: {e}")
+                    feature = None
+            else:
+                feature = None
+            
             if confidence >= self.bytetrack_threshold:
                 confident_tracks[int(track_id)] = {
                     'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
                     'confidence': float(confidence),
                     'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
                     'source': 'bytetrack',
+                    'feature': feature,  # Now ByteTrack also has features!
                     'last_seen': datetime.now()
                 }
                 self.camera_tracks[camera_id]['bytetrack_confident'] += 1
@@ -111,10 +140,12 @@ class TrackingService:
                 uncertain_detections.append({
                     'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
                     'confidence': float(confidence),
-                    'bytetrack_id': int(track_id)
+                    'bytetrack_id': int(track_id),
+                    'feature': feature
                 })
         
-        if len(uncertain_detections) > 0:
+        # Step 2: Apply DeepSORT for uncertain tracks (only at 2 FPS)
+        if run_deepsort and len(uncertain_detections) > 0:
             deepsort_tracker = self._get_deepsort_tracker(camera_id)
             deepsort_input = []
             for det in uncertain_detections:
@@ -132,11 +163,19 @@ class TrackingService:
                     except:
                         deepsort_key = f"ds_{track.track_id}"
                     
+                    # Extract appearance feature from DeepSORT track
+                    feature = None
+                    if hasattr(track, 'get_feature') and callable(track.get_feature):
+                        feature = track.get_feature()
+                    elif hasattr(track, 'features') and len(track.features) > 0:
+                        feature = track.features[-1]  # Get latest feature
+                    
                     confident_tracks[deepsort_key] = {
                         'bbox': [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
                         'confidence': track.get_det_conf() if hasattr(track, 'get_det_conf') else 0.5,
                         'center': (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2)),
                         'source': 'deepsort',
+                        'feature': feature,  # Store appearance feature
                         'last_seen': datetime.now()
                     }
                     self.camera_tracks[camera_id]['deepsort_assisted'] += 1
@@ -153,7 +192,7 @@ class TrackingService:
         return {
             'camera_id': camera_id,
             'people_count': len(confident_tracks),
-            'detections': detections_list,
+            'detections': [],  # Detections are passed in, not computed here
             'tracks': confident_tracks,
             'timestamp': datetime.now().isoformat(),
             'bytetrack_confident': self.camera_tracks[camera_id]['bytetrack_confident'],
@@ -217,10 +256,13 @@ class TrackingService:
         }
     
     def get_people_in_room(self, camera_ids: List[int]) -> List[Dict]:
-        """Get all people currently tracked in the given cameras"""
+        """
+        Get all people currently tracked in the given cameras
+        Deduplicates people seen by multiple cameras using ReID appearance features
+        """
         people_list = []
-        seen_track_ids = set()
         
+        # Collect all tracks with their bounding boxes and appearance features
         for camera_id in camera_ids:
             if camera_id not in self.camera_tracks:
                 continue
@@ -229,17 +271,156 @@ class TrackingService:
             tracks = camera_data.get('tracks', {})
             
             for track_id, track_info in tracks.items():
-                if track_id not in seen_track_ids:
-                    people_list.append({
-                        "track_id": int(track_id) if isinstance(track_id, int) else str(track_id),
-                        "camera_id": camera_id,
-                        "confidence": track_info.get('confidence', 0.0),
-                        "source": track_info.get('source', 'unknown'),
-                        "last_seen": track_info.get('last_seen', datetime.now()).isoformat() if hasattr(track_info.get('last_seen'), 'isoformat') else str(track_info.get('last_seen'))
-                    })
-                    seen_track_ids.add(track_id)
+                people_list.append({
+                    "track_id": f"{camera_id}_{track_id}",  # Make globally unique
+                    "camera_id": camera_id,
+                    "confidence": track_info.get('confidence', 0.0),
+                    "source": track_info.get('source', 'unknown'),
+                    "bbox": track_info.get('bbox', [0, 0, 0, 0]),  # [x1, y1, x2, y2]
+                    "feature": track_info.get('feature'),  # Appearance embedding for ReID
+                    "last_seen": track_info.get('last_seen', datetime.now()).isoformat() if hasattr(track_info.get('last_seen'), 'isoformat') else str(track_info.get('last_seen'))
+                })
+        
+        # Deduplicate using ReID appearance similarity if multiple cameras
+        if len(camera_ids) > 1:
+            people_list = self._deduplicate_people(people_list)
         
         return people_list
+    
+    def _deduplicate_people(self, people_list: List[Dict], similarity_threshold: float = 0.5, distance_threshold: float = 250.0) -> List[Dict]:
+        """
+        Remove duplicate people detected by multiple cameras using ReID appearance similarity
+        Uses cosine similarity on DeepSORT feature embeddings for robust cross-camera matching
+        Falls back to spatial distance for ByteTrack detections without features
+        """
+        if len(people_list) <= 1:
+            return people_list
+        
+        # Debug: Log initial state
+        logger.info("=" * 80)
+        logger.info(f"DEDUPLICATION START: {len(people_list)} detections")
+        for idx, p in enumerate(people_list):
+            has_feat = p.get('feature') is not None
+            logger.info(f"  [{idx}] Cam{p['camera_id']}:Track{p['track_id']} | "
+                       f"BBox{p['bbox']} | Conf={p['confidence']:.2f} | Feature={'YES' if has_feat else 'NO'}")
+        
+        # Sort by confidence (keep highest confidence detections)
+        people_list.sort(key=lambda x: x['confidence'], reverse=True)
+        
+        deduplicated = []
+        used_indices = set()
+        match_count = 0
+        
+        for i, person1 in enumerate(people_list):
+            if i in used_indices:
+                continue
+            
+            # Add first occurrence
+            deduplicated.append(person1)
+            used_indices.add(i)
+            
+            # Check for duplicates using appearance features or spatial distance
+            feature1 = person1.get('feature')
+            bbox1 = person1['bbox']
+            center1_x = (bbox1[0] + bbox1[2]) / 2
+            center1_y = (bbox1[1] + bbox1[3]) / 2
+            
+            for j in range(i + 1, len(people_list)):
+                if j in used_indices:
+                    continue
+                
+                person2 = people_list[j]
+                # Skip if same camera (can't be duplicate)
+                if person1['camera_id'] == person2['camera_id']:
+                    continue
+                
+                is_duplicate = False
+                match_reason = ""
+                
+                # Try appearance-based matching first (if both have features)
+                feature2 = person2.get('feature')
+                if feature1 is not None and feature2 is not None:
+                    similarity = self._cosine_similarity(feature1, feature2)
+                    if similarity > similarity_threshold:
+                        is_duplicate = True
+                        match_reason = f"ReID sim={similarity:.3f}>{similarity_threshold}"
+                        logger.info(f"  ✓ MATCH [{i}] Cam{person1['camera_id']}:Track{person1['track_id']} <-> "
+                                   f"[{j}] Cam{person2['camera_id']}:Track{person2['track_id']} | {match_reason}")
+                
+                # Always also check spatial distance as fallback/confirmation
+                if not is_duplicate:
+                    bbox2 = person2['bbox']
+                    center2_x = (bbox2[0] + bbox2[2]) / 2
+                    center2_y = (bbox2[1] + bbox2[3]) / 2
+                    
+                    distance = ((center1_x - center2_x) ** 2 + (center1_y - center2_y) ** 2) ** 0.5
+                    if distance < distance_threshold:
+                        is_duplicate = True
+                        match_reason = f"Distance={distance:.1f}px<{distance_threshold}px"
+                        logger.info(f"  ✓ MATCH [{i}] Cam{person1['camera_id']}:Track{person1['track_id']} <-> "
+                                   f"[{j}] Cam{person2['camera_id']}:Track{person2['track_id']} | {match_reason}")
+                
+                if is_duplicate:
+                    used_indices.add(j)
+                    match_count += 1
+        
+        logger.info(f"DEDUPLICATION RESULT: {len(people_list)} detections → {len(deduplicated)} unique | {match_count} matches")
+        logger.info("=" * 80)
+        return deduplicated
+    
+    def _cosine_similarity(self, feature1, feature2) -> float:
+        """Calculate cosine similarity between two feature vectors"""
+        try:
+            if isinstance(feature1, list):
+                feature1 = np.array(feature1)
+            if isinstance(feature2, list):
+                feature2 = np.array(feature2)
+            
+            # Flatten if needed
+            feature1 = feature1.flatten()
+            feature2 = feature2.flatten()
+            
+            # Calculate cosine similarity
+            dot_product = np.dot(feature1, feature2)
+            norm1 = np.linalg.norm(feature1)
+            norm2 = np.linalg.norm(feature2)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            return dot_product / (norm1 * norm2)
+        except Exception as e:
+            logger.warning(f"Error calculating cosine similarity: {e}")
+            return 0.0
+    
+    def _calculate_iou(self, bbox1: List[float], bbox2: List[float]) -> float:
+        """Calculate Intersection over Union between two bounding boxes"""
+        if len(bbox1) != 4 or len(bbox2) != 4:
+            return 0.0
+        
+        x1_min, y1_min, x1_max, y1_max = bbox1
+        x2_min, y2_min, x2_max, y2_max = bbox2
+        
+        # Calculate intersection
+        inter_x_min = max(x1_min, x2_min)
+        inter_y_min = max(y1_min, y2_min)
+        inter_x_max = min(x1_max, x2_max)
+        inter_y_max = min(y1_max, y2_max)
+        
+        if inter_x_max < inter_x_min or inter_y_max < inter_y_min:
+            return 0.0
+        
+        inter_area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
+        
+        # Calculate union
+        area1 = (x1_max - x1_min) * (y1_max - y1_min)
+        area2 = (x2_max - x2_min) * (y2_max - y2_min)
+        union_area = area1 + area2 - inter_area
+        
+        if union_area == 0:
+            return 0.0
+        
+        return inter_area / union_area
     
     def reset(self, camera_id: int = None):
         if camera_id:
