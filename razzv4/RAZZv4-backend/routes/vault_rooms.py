@@ -266,10 +266,14 @@ async def get_room_people_data(room_id: int, db: Session = Depends(get_db)):
                 person_data = {k: v for k, v in person.items() if k != 'feature'}
                 people_list.append(person_data)
         
+        # Count unique people based on global IDs (same person in multiple cameras = 1 person)
+        unique_global_ids = set(person['track_id'] for person in people_list)
+        
         return {
             "room_id": room_id,
             "room_name": vault_room.name,
-            "current_people_count": len(people_list),
+            "current_people_count": len(unique_global_ids),  # Count unique people by global ID
+            "total_detections": len(people_list),  # Total detections across all cameras
             "people": people_list,
             "timestamp": __import__('time').time()
         }

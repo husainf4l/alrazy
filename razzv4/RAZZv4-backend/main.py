@@ -21,12 +21,14 @@ from services.tracking_service import TrackingService
 from services.camera_service import CameraService
 from database import SessionLocal
 
-# Configure centralized logging
+# Configure centralized logging and settings
 from logging_config import setup_logging, get_logger
+from config import get_settings
 
 # Setup logging (INFO level for production, DEBUG for development)
 setup_logging(log_level="INFO")
 logger = get_logger(__name__)
+settings = get_settings()
 
 # Global service instances
 yolo_service = None
@@ -45,9 +47,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting RAZZv4 Backend...")
     
     try:
-        # Initialize YOLO service with medium model (same as brinksv2)
-        logger.info("Initializing YOLO11 service...")
-        yolo_service = YOLOService(model_name="yolo11m.pt", confidence_threshold=0.5)
+        # Initialize YOLO service from config (uses .env settings)
+        logger.info(f"Initializing YOLO11 service with {settings.YOLO_MODEL}...")
+        yolo_service = YOLOService()  # Uses config defaults
         
         # Initialize tracking service (BRINKSv2 style: ByteTrack + DeepSORT)
         # No args needed - it creates trackers per camera automatically

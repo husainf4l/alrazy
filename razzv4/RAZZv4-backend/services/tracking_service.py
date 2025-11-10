@@ -277,11 +277,13 @@ class TrackingService:
     def get_people_in_room(self, camera_ids: List[int]) -> List[Dict]:
         """
         Get all people currently tracked in the given cameras
-        Deduplicates people seen by multiple cameras using ReID appearance features
+        Returns people with global IDs for cross-camera consistency
+        Shows ALL detections from ALL cameras (not deduplicated)
+        Same person will have same global ID across cameras
         """
         people_list = []
         
-        # Collect all tracks with their bounding boxes and appearance features
+        # Collect all tracks with their global IDs from ALL cameras
         for camera_id in camera_ids:
             if camera_id not in self.camera_tracks:
                 continue
@@ -290,8 +292,13 @@ class TrackingService:
             tracks = camera_data.get('tracks', {})
             
             for track_id, track_info in tracks.items():
+                # Get global ID for this track
+                local_track_key = f"{camera_id}_{track_id}"
+                global_id = self.global_id_map.get(local_track_key, track_id)  # Fallback to local if no global ID
+                
                 people_list.append({
-                    "track_id": f"{camera_id}_{track_id}",  # Make globally unique
+                    "track_id": str(global_id),  # Use global ID - same person = same ID across cameras
+                    "local_track_id": local_track_key,  # Keep local for debugging
                     "camera_id": camera_id,
                     "confidence": track_info.get('confidence', 0.0),
                     "source": track_info.get('source', 'unknown'),
@@ -300,10 +307,8 @@ class TrackingService:
                     "last_seen": track_info.get('last_seen', datetime.now()).isoformat() if hasattr(track_info.get('last_seen'), 'isoformat') else str(track_info.get('last_seen'))
                 })
         
-        # Deduplicate using ReID appearance similarity if multiple cameras
-        if len(camera_ids) > 1:
-            people_list = self._deduplicate_people(people_list)
-        
+        # Don't deduplicate here - return all detections with global IDs
+        # Same person will have same global_id in multiple cameras
         return people_list
     
     def _deduplicate_people(self, people_list: List[Dict], similarity_threshold: float = None, distance_threshold: float = None) -> List[Dict]:
@@ -459,7 +464,7 @@ class TrackingService:
                 elif feature is not None:
                     self.global_features[best_match_id] = feature
                 
-                logger.debug(f"Matched {local_track_key} → Global ID {best_match_id} (sim={best_similarity:.3f})")
+                logger.info(f"✅ Matched Cam{camera_id} Track{track_id} → Global ID {best_match_id} (sim={best_similarity:.3f})")
             else:
                 # No match - create new global ID
                 self.global_person_id += 1
@@ -468,7 +473,7 @@ class TrackingService:
                 self.global_last_seen[new_global_id] = current_time
                 if feature is not None:
                     self.global_features[new_global_id] = feature
-                logger.debug(f"Created new global ID {new_global_id} for {local_track_key}")
+                logger.info(f"🆕 New Global ID {new_global_id} for Cam{camera_id} Track{track_id}")
     
     def _cosine_similarity(self, feature1, feature2) -> float:
         """Calculate cosine similarity between two feature vectors"""
