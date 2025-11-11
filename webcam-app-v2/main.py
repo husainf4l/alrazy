@@ -20,6 +20,7 @@ import base64
 import cv2
 import numpy as np
 from io import BytesIO
+from typing import List, Dict, Optional
 
 app = FastAPI(title="AI Webcam App", version="1.0.0")
 
@@ -228,3 +229,10 @@ async def process_image(request: Request):
         print(f"Error processing image: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ============= APPLICATION LIFECYCLE =============
+
+@app.on_event("startup")
+
