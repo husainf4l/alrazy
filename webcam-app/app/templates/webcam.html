@@ -75,13 +75,62 @@
                             <button id="stopCamera" onclick="stopWebcam()" class="bg-red-600 hover:bg-red-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap hidden">
                                 Stop
                             </button>
-                            <button onclick="capturePhoto()" class="bg-gray-800 hover:bg-gray-900 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="captureBtn">
-                                Capture
+                            <button onclick="captureAndProcess()" class="bg-green-600 hover:bg-green-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="captureBtn">
+                                📸 Capture & Process
+                            </button>
+                            <button onclick="capturePhoto()" class="bg-gray-800 hover:bg-gray-900 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="downloadBtn" title="Download frame as image">
+                                ⬇️ Download
                             </button>
                             <button onclick="toggleFullscreen()" class="bg-gray-600 hover:bg-gray-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="fullscreenBtn">
-                                Fullscreen
+                                ⛶ Fullscreen
                             </button>
                         </div>
+                    </div>
+                    
+                    <!-- Detection Results -->
+                    <div id="detectionResults" class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6 hidden">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-lg font-light text-gray-900">Processing Results</h4>
+                            <button onclick="clearResults()" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded transition-colors">Clear</button>
+                        </div>
+                        
+                        <!-- Processing Status -->
+                        <div id="processingStatus" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800 hidden">
+                            <span class="inline-block animate-spin mr-2">⏳</span>
+                            Processing frame... please wait
+                        </div>
+                        
+                        <!-- Processing Time -->
+                        <div id="processingTime" class="mb-3 text-xs text-gray-600 hidden">
+                            Processing took: <span id="timeValue">0</span>ms
+                        </div>
+                        
+                        <!-- YOLO Detections -->
+                        <div id="yoloSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">👤 Person Detections (YOLO)</h5>
+                            <div id="yoloResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Face Detections -->
+                        <div id="faceSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">😊 Face Detections</h5>
+                            <div id="faceResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Recognized Persons & Saved to DB -->
+                        <div id="recognizedSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">✅ Saved to Database</h5>
+                            <div id="recognizedResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Processing Logs -->
+                        <div id="logsSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">📋 Processing Log</h5>
+                            <div id="logResults" class="space-y-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 max-h-40 overflow-y-auto font-mono"></div>
+                        </div>
+                        
+                        <!-- Error Display -->
+                        <div id="errorDisplay" class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-xs text-red-800 hidden"></div>
                     </div>
                     
                     <!-- Detection History -->
@@ -235,6 +284,7 @@
                 document.getElementById('startCamera').classList.add('hidden');
                 document.getElementById('stopCamera').classList.remove('hidden');
                 document.getElementById('captureBtn').disabled = false;
+                document.getElementById('downloadBtn').disabled = false;
                 document.getElementById('fullscreenBtn').disabled = false;
                 
                 console.log('Webcam started successfully');
@@ -324,6 +374,7 @@
             document.getElementById('startCamera').classList.remove('hidden');
             document.getElementById('stopCamera').classList.add('hidden');
             document.getElementById('captureBtn').disabled = true;
+            document.getElementById('downloadBtn').disabled = true;
             document.getElementById('fullscreenBtn').disabled = true;
             
             console.log('Webcam stopped');
@@ -378,7 +429,183 @@
                 URL.revokeObjectURL(url);
             }, 'image/jpeg', 0.9);
             
-            console.log('Photo captured');
+            console.log('Photo captured and downloaded');
+        }
+        
+        // NEW: Capture frame and process through pipeline
+        async function captureAndProcess() {
+            if (!videoElement || !currentStream) return;
+            
+            try {
+                // Show processing status
+                const processingStatus = document.getElementById('processingStatus');
+                const detectionResults = document.getElementById('detectionResults');
+                processingStatus.classList.remove('hidden');
+                detectionResults.classList.remove('hidden');
+                
+                // Capture current frame to canvas
+                const context = canvasElement.getContext('2d');
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                context.drawImage(videoElement, 0, 0);
+                
+                // Convert canvas to base64 JPEG
+                const imageBase64 = await new Promise(resolve => {
+                    canvasElement.toBlob(blob => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            // Remove the "data:image/jpeg;base64," prefix
+                            resolve(reader.result.split(',')[1]);
+                        };
+                        reader.readAsDataURL(blob);
+                    }, 'image/jpeg', 0.9);
+                });
+                
+                // Send to API for processing
+                const startTime = performance.now();
+                const response = await fetch('/api/process-image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({ image: imageBase64 })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const endTime = performance.now();
+                const processingTimeMs = Math.round(endTime - startTime);
+                
+                // Hide processing status
+                processingStatus.classList.add('hidden');
+                
+                // Display results
+                displayProcessingResults(result, processingTimeMs);
+                
+                console.log('Frame processed successfully:', result);
+                
+            } catch (error) {
+                console.error('Error processing frame:', error);
+                const errorDisplay = document.getElementById('errorDisplay');
+                errorDisplay.textContent = `Error: ${error.message}`;
+                errorDisplay.classList.remove('hidden');
+            }
+        }
+        
+        // Display processing results in UI
+        function displayProcessingResults(result, processingTimeMs) {
+            // Show processing time
+            document.getElementById('timeValue').textContent = processingTimeMs;
+            document.getElementById('processingTime').classList.remove('hidden');
+            
+            // Clear previous results
+            clearResults();
+            
+            // Display YOLO Detections
+            if (result.yolo_detections && result.yolo_detections.length > 0) {
+                const yoloSection = document.getElementById('yoloSection');
+                const yoloResults = document.getElementById('yoloResults');
+                yoloSection.classList.remove('hidden');
+                
+                yoloResults.innerHTML = result.yolo_detections.map((person, idx) => `
+                    <div class="p-2 bg-blue-50 border border-blue-200 rounded">
+                        <div class="font-medium text-blue-900">Person ${person.person_id}</div>
+                        <div class="text-gray-700">
+                            Confidence: ${(person.yolo_confidence * 100).toFixed(1)}%<br>
+                            Position: (${person.bbox_center.x}, ${person.bbox_center.y})<br>
+                            Area: ${person.area_percentage.toFixed(1)}% of frame
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Display Face Detections
+            if (result.face_detections && result.face_detections.length > 0) {
+                const faceSection = document.getElementById('faceSection');
+                const faceResults = document.getElementById('faceResults');
+                faceSection.classList.remove('hidden');
+                
+                faceResults.innerHTML = result.face_detections.map((face, idx) => `
+                    <div class="p-2 bg-purple-50 border border-purple-200 rounded">
+                        <div class="font-medium text-purple-900">Face ${face.face_id}</div>
+                        <div class="text-gray-700">
+                            Confidence: ${(face.face_confidence * 100).toFixed(1)}%<br>
+                            Position: (${face.face_center.x}, ${face.face_center.y})<br>
+                            Landmarks: ${face.landmarks ? '✓' : '✗'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Display Recognized Persons (Saved to DB)
+            if (result.recognized_persons && result.recognized_persons.length > 0) {
+                const recognizedSection = document.getElementById('recognizedSection');
+                const recognizedResults = document.getElementById('recognizedResults');
+                recognizedSection.classList.remove('hidden');
+                
+                recognizedResults.innerHTML = result.recognized_persons.map((person, idx) => {
+                    // Check if this is a match
+                    if (person.is_match) {
+                        return `
+                            <div class="p-2 bg-yellow-50 border-2 border-yellow-400 rounded">
+                                <div class="font-medium text-yellow-900">🎯 MATCH FOUND!</div>
+                                <div class="text-gray-700">
+                                    <strong>Matched Person:</strong> ${person.matched_name}<br>
+                                    <strong>Similarity:</strong> ${(person.similarity * 100).toFixed(1)}%<br>
+                                    <strong>Type:</strong> ${person.match_type}<br>
+                                    <strong>Detection Count:</strong> #${person.detection_count}<br>
+                                    Embedding: ${person.embedding_length}-dim ArcFace<br>
+                                    Location: (${person.location.x}, ${person.location.y})
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="p-2 bg-green-50 border border-green-200 rounded">
+                                <div class="font-medium text-green-900">✅ NEW PERSON</div>
+                                <div class="text-gray-700">
+                                    Face ID: ${person.saved_face_id || 'Processing...'}<br>
+                                    Embedding: ${person.embedding_length}-dim ArcFace<br>
+                                    Location: (${person.location.x}, ${person.location.y})<br>
+                                    Status: ${person.verification_status}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            }
+            
+            // Display Processing Logs
+            if (result.log_messages && result.log_messages.length > 0) {
+                const logsSection = document.getElementById('logsSection');
+                const logResults = document.getElementById('logResults');
+                logsSection.classList.remove('hidden');
+                
+                logResults.innerHTML = result.log_messages.map(log => `
+                    <div class="text-gray-700">${log}</div>
+                `).join('');
+            }
+        }
+        
+        // Clear results display
+        function clearResults() {
+            document.getElementById('yoloResults').innerHTML = '';
+            document.getElementById('yoloSection').classList.add('hidden');
+            
+            document.getElementById('faceResults').innerHTML = '';
+            document.getElementById('faceSection').classList.add('hidden');
+            
+            document.getElementById('recognizedResults').innerHTML = '';
+            document.getElementById('recognizedSection').classList.add('hidden');
+            
+            document.getElementById('logResults').innerHTML = '';
+            document.getElementById('logsSection').classList.add('hidden');
+            
+            document.getElementById('errorDisplay').classList.add('hidden');
         }
         
         // Toggle fullscreen

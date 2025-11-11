@@ -13,11 +13,14 @@ from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from app.models.database import SessionLocal, FacePerson
 from app.services.yolo import validate_human_poses
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class FaceRecognitionService:
     def __init__(self):
         self.model_name = "ArcFace"  # Best accuracy model according to DeepFace docs
-        self.detector_backend = "opencv"  # Start with opencv, can upgrade to retinaface later
+        self.detector_backend = os.getenv("FACE_DETECTOR_BACKEND", "retinaface")  # Better accuracy than opencv
         self.distance_metric = "cosine"
         self.threshold = 0.68  # ArcFace threshold
         self.faces_dir = "app/static/faces"
@@ -36,11 +39,12 @@ class FaceRecognitionService:
         """
         Validate if the detected region contains a real human face using multiple validation methods:
         1. DeepFace detection and quality checks
-        2. YOLO pose validation to confirm human body structure
+        2. YOLO pose validation to confirm human body structure (optional)
         """
         print("Starting comprehensive face validation...")
         
-        # Step 1: YOLO pose validation - check for human body with proper facial landmarks
+        # Step 1: YOLO pose validation - check for human body with proper facial landmarks (optional)
+        yolo_validation_passed = False
         try:
             pose_data = validate_human_poses(image)
             valid_poses = pose_data.get("valid_poses", 0)
@@ -48,32 +52,36 @@ class FaceRecognitionService:
             
             print(f"YOLO detected {people_count} people with {valid_poses} valid poses")
             
-            if valid_poses == 0:
+            if valid_poses > 0:
+                # Additional YOLO validation - check pose quality
+                pose_details = pose_data.get("pose_data", [])
+                has_high_quality_pose = False
+                
+                for person in pose_details:
+                    if person.get("has_valid_pose", False):
+                        confidence = person.get("confidence", 0)
+                        face_landmarks = person.get("face_landmarks", {})
+                        
+                        # Check YOLO confidence and facial landmark quality
+                        if confidence > 0.8 and len(face_landmarks) >= 3:
+                            print(f"High-quality pose detected: confidence={confidence:.3f}, landmarks={len(face_landmarks)}")
+                            has_high_quality_pose = True
+                            break
+                
+                if has_high_quality_pose:
+                    yolo_validation_passed = True
+                else:
+                    print("YOLO validation failed: No high-quality poses found")
+            else:
                 print("YOLO validation failed: No valid human poses detected")
-                return False
-            
-            # Additional YOLO validation - check pose quality
-            pose_details = pose_data.get("pose_data", [])
-            has_high_quality_pose = False
-            
-            for person in pose_details:
-                if person.get("has_valid_pose", False):
-                    confidence = person.get("confidence", 0)
-                    face_landmarks = person.get("face_landmarks", {})
-                    
-                    # Check YOLO confidence and facial landmark quality
-                    if confidence > 0.8 and len(face_landmarks) >= 3:
-                        print(f"High-quality pose detected: confidence={confidence:.3f}, landmarks={len(face_landmarks)}")
-                        has_high_quality_pose = True
-                        break
-            
-            if not has_high_quality_pose:
-                print("YOLO validation failed: No high-quality poses found")
-                return False
                 
         except Exception as e:
             print(f"YOLO pose validation error: {e}")
             print("Continuing with DeepFace-only validation...")
+        
+        # If YOLO validation failed, we'll still proceed with DeepFace validation
+        if not yolo_validation_passed:
+            print("⚠️  YOLO validation not available or failed - proceeding with DeepFace validation only")
         
         # Step 2: DeepFace validation for face detection quality
         try:
@@ -678,7 +686,24 @@ class FaceRecognitionService:
         Enhanced with YOLO pose validation to prevent false positives
         """
         try:
-            # First, validate that we have real human faces using our enhanced validation
+            # Use high-quality face extraction first
+            results = DeepFace.extract_faces(
+                img_path=image,
+                detector_backend=self.detector_backend,
+                enforce_detection=True,  
+                align=True,
+                expand_percentage=5
+            )
+            
+            if not results:
+                print("No faces detected")
+                return {
+                    "face_count": 0,
+                    "recognized_faces": [],
+                    "new_faces_added": []
+                }
+            
+            # Now validate the detected faces
             if not self._validate_real_face(image):
                 print("Image does not contain valid human faces")
                 return {
@@ -690,24 +715,12 @@ class FaceRecognitionService:
             
             # Get YOLO pose data for additional validation
             pose_data = validate_human_poses(image)
-            max_people = pose_data.get("people_count", 1)  # Limit processing based on YOLO
+            max_people = pose_data.get("people_count", len(results))  # Default to detected faces if YOLO fails
             
-            # Use high-quality face extraction
-            results = DeepFace.extract_faces(
-                img_path=image,
-                detector_backend=self.detector_backend,
-                enforce_detection=True,  
-                align=True,
-                expand_percentage=5
-            )
-            
-            if not results:
-                print("No faces detected after validation")
-                return {
-                    "face_count": 0,
-                    "recognized_faces": [],
-                    "new_faces_added": []
-                }
+            # If YOLO failed, allow all detected faces
+            if max_people == 0:
+                print("⚠️  YOLO failed to detect people, allowing all DeepFace results")
+                max_people = len(results)
             
             # Limit face processing to YOLO people count to prevent false positives
             if len(results) > max_people:

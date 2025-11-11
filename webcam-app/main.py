@@ -14,7 +14,12 @@ from app.services.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from app.services.face_recognition import get_face_service
+from app.services.webcam_processor import get_webcam_processor
 from pydantic import BaseModel
+import base64
+import cv2
+import numpy as np
+from io import BytesIO
 
 app = FastAPI(title="AI Webcam App", version="1.0.0")
 
@@ -141,3 +146,85 @@ async def get_current_user_info(current_user = Depends(get_current_user)):
 @app.get("/protected")
 async def protected_route(current_user = Depends(get_current_user)):
     return {"message": f"Hello {current_user.email}, this is a protected route!"}
+
+# ============ WEBCAM PROCESSING ENDPOINTS ============
+
+@app.post("/api/process-frame")
+async def process_frame(request: Request):
+    """
+    Process a single frame from webcam
+    Expects: {"frame": "base64_encoded_image"}
+    Returns: Detection results with locations and logs
+    """
+    try:
+        data = await request.json()
+        frame_b64 = data.get("frame", "")
+        
+        if not frame_b64:
+            raise HTTPException(status_code=400, detail="No frame data provided")
+        
+        # Decode base64 frame
+        frame_data = base64.b64decode(frame_b64)
+        nparr = np.frombuffer(frame_data, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Invalid frame data")
+        
+        # Process frame
+        processor = get_webcam_processor(fps_limit=2)
+        result = processor.process_frame(frame)
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        import traceback
+        print(f"Error processing frame: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/webcam-status")
+async def get_webcam_status():
+    """Get webcam processor status"""
+    try:
+        processor = get_webcam_processor(fps_limit=2)
+        status_data = processor.get_status()
+        return JSONResponse(content=status_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/process-image")
+async def process_image(request: Request):
+    """
+    Process a static image for testing
+    Expects: {"image": "base64_encoded_image"}
+    """
+    try:
+        import os
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Use CPU
+        
+        data = await request.json()
+        image_b64 = data.get("image", "")
+        
+        if not image_b64:
+            raise HTTPException(status_code=400, detail="No image data provided")
+        
+        # Decode base64
+        image_data = base64.b64decode(image_b64)
+        nparr = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise HTTPException(status_code=400, detail="Invalid image data")
+        
+        # Process image
+        processor = get_webcam_processor(fps_limit=2)
+        result = processor.process_frame(image)
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        import traceback
+        print(f"Error processing image: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

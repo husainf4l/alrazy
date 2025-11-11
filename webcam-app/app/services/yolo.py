@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class YOLOPeopleDetector:
     def __init__(self):

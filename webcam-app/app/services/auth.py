@@ -5,12 +5,17 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import hashlib
 import secrets
+import os
+from dotenv import load_dotenv
 from app.models.database import User, get_db
 
+# Load environment variables
+load_dotenv()
+
 # JWT Configuration
-SECRET_KEY = "your-secret-key-change-this-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # HTTP Bearer for token authentication
 security = HTTPBearer()
