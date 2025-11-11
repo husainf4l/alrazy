@@ -15,10 +15,12 @@ from app.services.auth import (
 )
 from app.services.face_recognition import get_face_service
 from app.services.webcam_processor import get_webcam_processor
+from app.services.multi_angle_capture import get_multi_angle_service
 from pydantic import BaseModel
 import base64
 import cv2
 import numpy as np
+import time
 from io import BytesIO
 from typing import List, Dict, Optional
 
@@ -33,6 +35,13 @@ templates = Jinja2Templates(directory="app/templates")
 # Pydantic models
 class UpdateNameRequest(BaseModel):
     name: str
+
+class MultiAngleCaptureRequest(BaseModel):
+    person_name: str
+    front_image: Optional[str] = None
+    left_image: Optional[str] = None
+    right_image: Optional[str] = None
+    back_image: Optional[str] = None
 
 # Initialize database
 try:
@@ -210,6 +219,10 @@ async def process_image(request: Request):
         if not image_b64:
             raise HTTPException(status_code=400, detail="No image data provided")
         
+        # Remove data URL prefix if present
+        if ',' in image_b64:
+            image_b64 = image_b64.split(',')[1]
+        
         # Decode base64
         image_data = base64.b64decode(image_b64)
         nparr = np.frombuffer(image_data, np.uint8)
@@ -231,8 +244,184 @@ async def process_image(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============= MULTI-ANGLE FACE CAPTURE =============
+
+@app.post("/api/capture-multi-angle")
+async def capture_multi_angle(
+    request: MultiAngleCaptureRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Capture face from multiple angles (front, left, right, back)
+    Stores multiple embeddings for better recognition from any viewpoint
+    """
+    try:
+        images = {}
+        
+        # Decode each angle image if provided
+        for angle in ["front", "left", "right", "back"]:
+            image_b64 = getattr(request, f"{angle}_image")
+            if image_b64:
+                # Decode base64
+                image_data = base64.b64decode(image_b64.split(',')[1] if ',' in image_b64 else image_b64)
+                nparr = np.frombuffer(image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is not None:
+                    images[angle] = image
+        
+        if len(images) < 2:
+            return JSONResponse(content={
+                "success": False,
+                "error": "Need at least 2 angle images (front, left, right, or back)"
+            })
+        
+        # Process multi-angle capture
+        multi_angle_service = get_multi_angle_service()
+        result = multi_angle_service.capture_multi_angle_face(images, request.person_name)
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        import traceback
+        print(f"Multi-angle capture error: {e}")
+        traceback.print_exc()
+        return JSONResponse(content={
+            "success": False,
+            "error": str(e)
+        })
+
+
+@app.get("/test-webcam", response_class=HTMLResponse)
+async def test_webcam_page(request: Request):
+    """Test webcam page for face recognition testing"""
+    return templates.TemplateResponse("test_webcam.html", {"request": request})
+
+
+@app.post("/api/test-face-recognition")
+async def test_face_recognition(request: Request):
+    """
+    Direct face recognition for testing (relaxed validation)
+    Expects: {"image": "base64_encoded_image"}
+    """
+    try:
+        import os
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Use CPU
+        
+        data = await request.json()
+        image_b64 = data.get("image", "")
+        
+        if not image_b64:
+            raise HTTPException(status_code=400, detail="No image data provided")
+        
+        # Remove data URL prefix if present
+        if ',' in image_b64:
+            image_b64 = image_b64.split(',')[1]
+        
+        # Decode base64
+        image_data = base64.b64decode(image_b64)
+        nparr = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise HTTPException(status_code=400, detail="Invalid image data")
+        
+        # Direct face detection and matching using face matching service
+        from app.services.face_matching import FaceMatchingService
+        from deepface import DeepFace
+        
+        start_time = time.time()
+        
+        # Extract faces using DeepFace
+        try:
+            face_objs = DeepFace.extract_faces(
+                img_path=image,
+                detector_backend="retinaface",
+                enforce_detection=False,
+                align=True,
+                expand_percentage=35
+            )
+        except:
+            face_objs = []
+        
+        faces = []
+        
+        if face_objs:
+            matching_service = FaceMatchingService()
+            
+            for face_obj in face_objs:
+                try:
+                    # Extract embedding
+                    embedding_objs = DeepFace.represent(
+                        img_path=face_obj["face"] * 255,
+                        model_name="ArcFace",
+                        detector_backend="skip",
+                        enforce_detection=False
+                    )
+                    
+                    if embedding_objs:
+                        embedding = embedding_objs[0]["embedding"]
+                        
+                        # Match against database
+                        match_result = matching_service.get_best_match(embedding)
+                        
+                        print(f"DEBUG: Match result = {match_result}")  # Debug log
+                        
+                        if match_result and match_result.get("similarity"):
+                            faces.append({
+                                "person_name": match_result.get("name", "Unknown"),
+                                "person_id": match_result.get("person_id"),
+                                "match_confidence": match_result.get("similarity", 0),
+                                "detection_count": 0,
+                                "x": 0,
+                                "y": 0,
+                                "width": 0,
+                                "height": 0
+                            })
+                        else:
+                            print("DEBUG: No match found or match below threshold")
+                            faces.append({
+                                "person_name": "Unknown",
+                                "person_id": None,
+                                "match_confidence": 0,
+                                "detection_count": 0,
+                                "x": 0,
+                                "y": 0,
+                                "width": 0,
+                                "height": 0
+                            })
+                except Exception as e:
+                    print(f"Error processing face: {e}")
+                    continue
+        
+        processing_time = int((time.time() - start_time) * 1000)
+        
+        return JSONResponse(content={
+            "faces": faces,
+            "processing_time": f"{processing_time}ms",
+            "message": f"Found {len(faces)} face(s)" if faces else "No faces detected. Make sure your face is clearly visible."
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in test face recognition: {e}")
+        traceback.print_exc()
+        return JSONResponse(content={
+            "faces": [],
+            "error": str(e),
+            "message": "Error processing image"
+        })
+
 
 # ============= APPLICATION LIFECYCLE =============
 
 @app.on_event("startup")
+async def startup_event():
+    """Application startup"""
+    print("🚀 Application started")
 
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown"""
+    print("👋 Application shutdown")

@@ -130,6 +130,61 @@
                         <div id="errorDisplay" class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-xs text-red-800 hidden"></div>
                     </div>
                     
+                    <!-- Multi-Angle Face Capture -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6">
+                        <h4 class="text-lg font-light text-gray-900 mb-4">📸 Multi-Angle Face Registration</h4>
+                        <p class="text-sm text-gray-600 mb-4">Capture 4 angles for better face recognition from any viewpoint</p>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Person Name</label>
+                            <input type="text" id="multiAngleName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Enter name">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                <div class="text-2xl mb-2">👤</div>
+                                <div class="text-xs text-gray-600 mb-2">Front</div>
+                                <button onclick="captureAngle('front')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded" disabled id="captureFront">
+                                    Capture
+                                </button>
+                                <div id="statusFront" class="text-xs text-gray-500 mt-2">Not captured</div>
+                            </div>
+                            
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                <div class="text-2xl mb-2">👈</div>
+                                <div class="text-xs text-gray-600 mb-2">Left</div>
+                                <button onclick="captureAngle('left')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded" disabled id="captureLeft">
+                                    Capture
+                                </button>
+                                <div id="statusLeft" class="text-xs text-gray-500 mt-2">Not captured</div>
+                            </div>
+                            
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                <div class="text-2xl mb-2">👉</div>
+                                <div class="text-xs text-gray-600 mb-2">Right</div>
+                                <button onclick="captureAngle('right')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded" disabled id="captureRight">
+                                    Capture
+                                </button>
+                                <div id="statusRight" class="text-xs text-gray-500 mt-2">Not captured</div>
+                            </div>
+                            
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                                <div class="text-2xl mb-2">🔄</div>
+                                <div class="text-xs text-gray-600 mb-2">Back</div>
+                                <button onclick="captureAngle('back')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded" disabled id="captureBack">
+                                    Capture
+                                </button>
+                                <div id="statusBack" class="text-xs text-gray-500 mt-2">Not captured</div>
+                            </div>
+                        </div>
+                        
+                        <button onclick="submitMultiAngle()" class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors" disabled id="submitMultiAngle">
+                            Complete Registration
+                        </button>
+                        
+                        <div id="multiAngleResult" class="mt-4 hidden"></div>
+                    </div>
+                    
                     <!-- Detection History -->
                     <div class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6">
                         <h4 class="text-lg font-light text-gray-900 mb-4">Recent Activity</h4>
@@ -283,6 +338,12 @@
                 document.getElementById('captureBtn').disabled = false;
                 document.getElementById('downloadBtn').disabled = false;
                 document.getElementById('fullscreenBtn').disabled = false;
+                
+                // Enable multi-angle capture buttons
+                ['captureFront', 'captureLeft', 'captureRight', 'captureBack'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.disabled = false;
+                });
                 
                 console.log('Webcam started successfully');
                 
@@ -698,6 +759,130 @@
                 console.error('API request failed:', error);
                 return null;
             }
+        }
+        
+        // ============= MULTI-ANGLE CAPTURE FUNCTIONS =============
+        
+        let capturedAngles = {
+            front: null,
+            left: null,
+            right: null,
+            back: null
+        };
+        
+        function captureAngle(angle) {
+            if (!currentStream || !videoElement) {
+                alert('Please start the camera first');
+                return;
+            }
+            
+            // Capture current frame
+            const canvas = canvasElement || document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0);
+            
+            // Store image as base64
+            capturedAngles[angle] = canvas.toDataURL('image/jpeg', 0.95);
+            
+            // Update UI
+            document.getElementById(`status${angle.charAt(0).toUpperCase() + angle.slice(1)}`).textContent = '✓ Captured';
+            document.getElementById(`status${angle.charAt(0).toUpperCase() + angle.slice(1)}`).classList.add('text-green-600', 'font-bold');
+            
+            // Enable submit button if at least 2 angles captured
+            const capturedCount = Object.values(capturedAngles).filter(img => img !== null).length;
+            if (capturedCount >= 2) {
+                document.getElementById('submitMultiAngle').disabled = false;
+            }
+            
+            console.log(`Captured ${angle} angle. Total: ${capturedCount}/4`);
+        }
+        
+        async function submitMultiAngle() {
+            const personName = document.getElementById('multiAngleName').value.trim();
+            
+            if (!personName) {
+                alert('Please enter a person name');
+                return;
+            }
+            
+            const capturedCount = Object.values(capturedAngles).filter(img => img !== null).length;
+            if (capturedCount < 2) {
+                alert('Please capture at least 2 angles');
+                return;
+            }
+            
+            // Show loading
+            const resultDiv = document.getElementById('multiAngleResult');
+            resultDiv.className = 'mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800';
+            resultDiv.textContent = '⏳ Processing multi-angle registration...';
+            resultDiv.classList.remove('hidden');
+            
+            document.getElementById('submitMultiAngle').disabled = true;
+            
+            try {
+                const response = await fetch('/api/capture-multi-angle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({
+                        person_name: personName,
+                        front_image: capturedAngles.front,
+                        left_image: capturedAngles.left,
+                        right_image: capturedAngles.right,
+                        back_image: capturedAngles.back
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.className = 'mt-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800';
+                    resultDiv.innerHTML = `
+                        <div class="font-bold mb-2">✅ Registration Successful!</div>
+                        <div>Person: ${result.person_name}</div>
+                        <div>Person ID: ${result.person_id}</div>
+                        <div>Angles captured: ${result.angles_captured.join(', ')}</div>
+                        <div>Total embeddings: ${result.total_embeddings}</div>
+                    `;
+                    
+                    // Reset
+                    setTimeout(() => {
+                        resetMultiAngle();
+                    }, 5000);
+                } else {
+                    resultDiv.className = 'mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800';
+                    resultDiv.textContent = `❌ Error: ${result.error}`;
+                    document.getElementById('submitMultiAngle').disabled = false;
+                }
+                
+            } catch (error) {
+                resultDiv.className = 'mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800';
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                document.getElementById('submitMultiAngle').disabled = false;
+            }
+        }
+        
+        function resetMultiAngle() {
+            capturedAngles = {
+                front: null,
+                left: null,
+                right: null,
+                back: null
+            };
+            
+            ['Front', 'Left', 'Right', 'Back'].forEach(angle => {
+                const status = document.getElementById(`status${angle}`);
+                status.textContent = 'Not captured';
+                status.classList.remove('text-green-600', 'font-bold');
+            });
+            
+            document.getElementById('multiAngleName').value = '';
+            document.getElementById('submitMultiAngle').disabled = true;
+            document.getElementById('multiAngleResult').classList.add('hidden');
         }
     </script>
 </body>

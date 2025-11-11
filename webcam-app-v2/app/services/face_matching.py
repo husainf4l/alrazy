@@ -18,13 +18,13 @@ class FaceMatchingService:
     Uses cosine similarity for embedding comparison
     """
     
-    def __init__(self, similarity_threshold: float = 0.6):
+    def __init__(self, similarity_threshold: float = 0.55):
         """
         Initialize face matching service
         
         similarity_threshold: Cosine similarity threshold (0-1)
                              Higher = stricter matching
-                             0.6 = good balance (60% similar = match)
+                             0.55 = balanced for real-time (55% similar = match)
         """
         self.threshold = similarity_threshold
         self.db_session = SessionLocal
