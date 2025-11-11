@@ -1,0 +1,33 @@
+[project]
+name = "webcam-app-v2"
+version = "2.0.0"
+description = "Webcam Face Detection & Recognition System v2.0 - Enhanced YOLO + ArcFace Pipeline"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.121.1",
+    "jinja2>=3.1.6",
+    "passlib[bcrypt]==1.7.2",
+    "psycopg2-binary>=2.9.11",
+    "python-jose[cryptography]>=3.5.0",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.44",
+    "uvicorn>=0.38.0",
+    "ultralytics>=8.3.0",
+    "opencv-python>=4.10.0",
+    "numpy>=1.24.0",
+    "deepface>=0.0.91",
+    "tf-keras>=2.15.0",
+    "scipy>=1.11.0",
+    "retina-face>=0.0.17",
+    "python-dotenv>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["detected_faces*"]

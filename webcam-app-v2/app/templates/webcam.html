@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam - Brinks Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white text-gray-900 font-sans">
+    {% include 'components/sidebar.html' %}
+
+    <div class="lg:ml-64">
+        <!-- Mobile Header -->
+        <div class="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+            <button onclick="openMobileSidebar()" class="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200" aria-label="Open menu">
+                <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <h1 class="text-lg font-semibold text-gray-900">Brinks Demo</h1>
+            <div class="w-6"></div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col">
+            <!-- Content Area -->
+            <main class="flex-1 overflow-auto p-4 lg:p-6">
+                <div class="space-y-6">
+                    <!-- Live Feed Section -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-light text-gray-900">Live Feed</h3>
+                        </div>
+                        <div id="videoContainer" class="bg-gray-900 rounded-lg overflow-hidden w-full">
+                            <video id="webcamVideo" class="w-full h-auto object-contain hidden" autoplay playsinline muted></video>
+                            <canvas id="webcamCanvas" class="w-full h-auto object-contain hidden"></canvas>
+                            <div id="webcamPlaceholder" class="flex items-center justify-center h-64 text-gray-400">
+                                <div class="text-center">
+                                    <div class="text-sm text-gray-500 mb-2">Camera Feed</div>
+                                    <p class="text-sm">Click "Start Camera" to begin</p>
+                                    <p class="text-xs mt-1">Grant camera permission when prompted</p>
+                                </div>
+                            </div>
+                            <div id="webcamError" class="flex items-center justify-center h-64 text-red-400 hidden">
+                                <div class="text-center">
+                                    <p class="text-sm">Camera access denied or not available</p>
+                                    <p class="text-xs mt-1">Please check your browser settings</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Camera Controls -->
+                        <div class="mt-4 flex items-center gap-1 overflow-x-auto">
+                            <select id="cameraSelect" class="text-xs border border-gray-300 rounded px-2 py-1 min-w-0 flex-shrink-0" onchange="switchCamera()">
+                                <option value="">Camera...</option>
+                            </select>
+                            <button id="startCamera" onclick="startWebcam()" class="bg-blue-600 hover:bg-blue-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap">
+                                Start
+                            </button>
+                            <button id="stopCamera" onclick="stopWebcam()" class="bg-red-600 hover:bg-red-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap hidden">
+                                Stop
+                            </button>
+                            <button onclick="captureAndProcess()" class="bg-green-600 hover:bg-green-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="captureBtn">
+                                📸 Capture & Process
+                            </button>
+                            <button onclick="capturePhoto()" class="bg-gray-800 hover:bg-gray-900 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="downloadBtn" title="Download frame as image">
+                                ⬇️ Download
+                            </button>
+                            <button onclick="toggleFullscreen()" class="bg-gray-600 hover:bg-gray-700 text-white font-light py-1 px-2 rounded text-xs transition-colors duration-200 whitespace-nowrap" disabled id="fullscreenBtn">
+                                ⛶ Fullscreen
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Detection Results -->
+                    <div id="detectionResults" class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6 hidden">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-lg font-light text-gray-900">Processing Results</h4>
+                            <button onclick="clearResults()" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded transition-colors">Clear</button>
+                        </div>
+                        
+                        <!-- Processing Status -->
+                        <div id="processingStatus" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800 hidden">
+                            <span class="inline-block animate-spin mr-2">⏳</span>
+                            Processing frame... please wait
+                        </div>
+                        
+                        <!-- Processing Time -->
+                        <div id="processingTime" class="mb-3 text-xs text-gray-600 hidden">
+                            Processing took: <span id="timeValue">0</span>ms
+                        </div>
+                        
+                        <!-- YOLO Detections -->
+                        <div id="yoloSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">👤 Person Detections (YOLO)</h5>
+                            <div id="yoloResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Face Detections -->
+                        <div id="faceSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">😊 Face Detections</h5>
+                            <div id="faceResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Recognized Persons & Saved to DB -->
+                        <div id="recognizedSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">✅ Saved to Database</h5>
+                            <div id="recognizedResults" class="space-y-2 text-xs"></div>
+                        </div>
+                        
+                        <!-- Processing Logs -->
+                        <div id="logsSection" class="mb-4 hidden">
+                            <h5 class="text-sm font-medium text-gray-800 mb-2">📋 Processing Log</h5>
+                            <div id="logResults" class="space-y-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 max-h-40 overflow-y-auto font-mono"></div>
+                        </div>
+                        
+                        <!-- Error Display -->
+                        <div id="errorDisplay" class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-xs text-red-800 hidden"></div>
+                    </div>
+                    
+                    <!-- Detection History -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 lg:p-6">
+                        <h4 class="text-lg font-light text-gray-900 mb-4">Recent Activity</h4>
+                        <div class="text-center py-8 text-gray-500">
+                            <p class="text-sm">No recent activity</p>
+                            <p class="text-xs mt-1">Activity will appear here once detection starts</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Check authentication and set up token handling
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return token;
+        }
+        
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+        
+        // Webcam functionality
+        let currentStream = null;
+        let videoElement = null;
+        let canvasElement = null;
+        let videoContainer = null;
+        let captureCount = 0;
+        
+        // Initialize webcam elements
+        function initWebcam() {
+            videoElement = document.getElementById('webcamVideo');
+            canvasElement = document.getElementById('webcamCanvas');
+            videoContainer = document.getElementById('videoContainer');
+            
+            // Get available cameras
+            getCameraDevices();
+        }
+        
+        // Get available camera devices
+        async function getCameraDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                const select = document.getElementById('cameraSelect');
+                
+                // Store current selection
+                const currentSelection = select.value;
+                
+                // Clear existing options
+                select.innerHTML = '<option value="">Camera...</option>';
+                
+                cameras.forEach((camera, index) => {
+                    const option = document.createElement('option');
+                    option.value = camera.deviceId;
+                    option.textContent = camera.label || `Camera ${index + 1}`;
+                    select.appendChild(option);
+                });
+                
+                // Restore selection if it still exists
+                if (currentSelection && select.querySelector(`option[value="${currentSelection}"]`)) {
+                    select.value = currentSelection;
+                }
+                
+                if (cameras.length > 0) {
+                    console.log(`Found ${cameras.length} camera(s)`);
+                }
+                
+                return cameras;
+            } catch (error) {
+                console.error('Error getting camera devices:', error);
+                return [];
+            }
+        }
+        
+        // Update camera selection dropdown to show currently active camera
+        function updateCameraSelection(deviceId = null) {
+            const select = document.getElementById('cameraSelect');
+            
+            if (deviceId) {
+                // Select the specific device ID
+                select.value = deviceId;
+                console.log(`Updated dropdown to show active camera: ${deviceId}`);
+            } else if (currentStream) {
+                // Try to get device ID from current stream
+                const videoTrack = currentStream.getVideoTracks()[0];
+                if (videoTrack && videoTrack.getSettings().deviceId) {
+                    const activeDeviceId = videoTrack.getSettings().deviceId;
+                    select.value = activeDeviceId;
+                    console.log(`Updated dropdown to show active camera: ${activeDeviceId}`);
+                } else if (select.options.length > 1) {
+                    // Fallback: select first available camera
+                    select.selectedIndex = 1;
+                    console.log('Selected first available camera as fallback');
+                }
+            }
+            
+            // Update dropdown text if a camera is selected
+            if (select.selectedIndex > 0) {
+                const selectedOption = select.options[select.selectedIndex];
+                console.log(`Active camera: ${selectedOption.textContent}`);
+            }
+        }
+        
+        // Start webcam with cross-platform support
+        async function startWebcam(deviceId = null) {
+            try {
+                // Stop existing stream
+                if (currentStream) {
+                    stopWebcam();
+                }
+                
+                // Request camera access with optimal settings for different platforms
+                const constraints = {
+                    video: {
+                        width: { ideal: 1920, max: 1920 },
+                        height: { ideal: 1080, max: 1080 },
+                        frameRate: { ideal: 30, max: 30 },
+                        facingMode: 'user' // Front camera on mobile by default
+                    },
+                    audio: false
+                };
+                
+                // Use specific camera if deviceId provided
+                if (deviceId) {
+                    constraints.video.deviceId = { exact: deviceId };
+                    delete constraints.video.facingMode;
+                }
+                
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = currentStream;
+                
+                // Wait for video metadata to load
+                videoElement.addEventListener('loadedmetadata', handleVideoLoaded);
+                
+                // Show video, hide placeholder
+                document.getElementById('webcamPlaceholder').classList.add('hidden');
+                document.getElementById('webcamError').classList.add('hidden');
+                videoElement.classList.remove('hidden');
+                
+                // Update button states
+                document.getElementById('startCamera').classList.add('hidden');
+                document.getElementById('stopCamera').classList.remove('hidden');
+                document.getElementById('captureBtn').disabled = false;
+                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('fullscreenBtn').disabled = false;
+                
+                console.log('Webcam started successfully');
+                
+                // Update camera selection dropdown to show current camera
+                updateCameraSelection(deviceId);
+                
+                // Refresh camera list with labels now that we have permission
+                getCameraDevices();
+                
+            } catch (error) {
+                console.error('Error starting webcam:', error);
+                showWebcamError(error);
+            }
+        }
+        
+        // Handle video loaded and adjust container based on orientation
+        function handleVideoLoaded() {
+            const videoWidth = videoElement.videoWidth;
+            const videoHeight = videoElement.videoHeight;
+            const aspectRatio = videoWidth / videoHeight;
+            
+            console.log(`Video dimensions: ${videoWidth}x${videoHeight}, aspect ratio: ${aspectRatio.toFixed(2)}`);
+            
+            // Reset any previous styling
+            videoContainer.style.aspectRatio = '';
+            videoContainer.style.maxHeight = '';
+            videoContainer.style.maxWidth = '';
+            videoContainer.style.height = '';
+            videoContainer.className = 'bg-gray-900 rounded-lg overflow-hidden w-full';
+            
+            // Determine if video is horizontal or vertical
+            const isHorizontal = aspectRatio >= 1;
+            
+            if (isHorizontal) {
+                // Horizontal video (landscape) - let it take full width
+                videoElement.className = 'w-full h-auto object-contain rounded-lg';
+                videoContainer.style.maxHeight = '70vh';
+                console.log('Horizontal video detected - using full width');
+            } else {
+                // Vertical video (portrait) - center it with max width
+                videoElement.className = 'w-full h-auto object-contain rounded-lg mx-auto';
+                videoContainer.style.maxWidth = '50vw';
+                videoContainer.style.maxHeight = '80vh';
+                videoContainer.classList.add('mx-auto');
+                console.log('Vertical video detected - centering with max width');
+            }
+            
+            // Mobile adjustments
+            if (window.innerWidth < 768) {
+                if (isHorizontal) {
+                    videoContainer.style.maxHeight = '50vh';
+                } else {
+                    videoContainer.style.maxWidth = '90vw';
+                    videoContainer.style.maxHeight = '70vh';
+                }
+            }
+        }
+        
+        // Stop webcam
+        function stopWebcam() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+            
+            // Remove event listener
+            videoElement.removeEventListener('loadedmetadata', handleVideoLoaded);
+            
+            videoElement.srcObject = null;
+            videoElement.classList.add('hidden');
+            
+            // Reset container styles to default
+            videoContainer.style.aspectRatio = '';
+            videoContainer.style.maxHeight = '';
+            videoContainer.style.maxWidth = '';
+            videoContainer.style.height = '';
+            videoContainer.className = 'bg-gray-900 rounded-lg overflow-hidden w-full';
+            
+            document.getElementById('webcamPlaceholder').classList.remove('hidden');
+            
+            // Reset camera selection dropdown
+            const select = document.getElementById('cameraSelect');
+            select.selectedIndex = 0; // Reset to "Camera..." option
+            
+            // Update button states
+            document.getElementById('startCamera').classList.remove('hidden');
+            document.getElementById('stopCamera').classList.add('hidden');
+            document.getElementById('captureBtn').disabled = true;
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('fullscreenBtn').disabled = true;
+            
+            console.log('Webcam stopped');
+        }
+        
+        // Switch camera
+        async function switchCamera() {
+            const select = document.getElementById('cameraSelect');
+            const deviceId = select.value;
+            
+            if (deviceId && currentStream) {
+                await startWebcam(deviceId);
+            }
+        }
+        
+        // Show webcam error
+        function showWebcamError(error) {
+            document.getElementById('webcamPlaceholder').classList.add('hidden');
+            document.getElementById('webcamError').classList.remove('hidden');
+            
+            let errorMessage = 'Camera access denied or not available';
+            
+            if (error.name === 'NotAllowedError') {
+                errorMessage = 'Camera permission denied. Please allow camera access.';
+            } else if (error.name === 'NotFoundError') {
+                errorMessage = 'No camera found. Please connect a camera.';
+            } else if (error.name === 'NotReadableError') {
+                errorMessage = 'Camera is in use by another application.';
+            }
+            
+            document.querySelector('#webcamError p').textContent = errorMessage;
+        }
+        
+        // Capture photo
+        function capturePhoto() {
+            if (!videoElement || !currentStream) return;
+            
+            const context = canvasElement.getContext('2d');
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            
+            // Draw current video frame to canvas
+            context.drawImage(videoElement, 0, 0);
+            
+            // Convert to blob and download
+            canvasElement.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `webcam-capture-${++captureCount}.jpg`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/jpeg', 0.9);
+            
+            console.log('Photo captured and downloaded');
+        }
+        
+        // NEW: Capture frame and process through pipeline
+        async function captureAndProcess() {
+            if (!videoElement || !currentStream) return;
+            
+            try {
+                // Show processing status
+                const processingStatus = document.getElementById('processingStatus');
+                const detectionResults = document.getElementById('detectionResults');
+                processingStatus.classList.remove('hidden');
+                detectionResults.classList.remove('hidden');
+                
+                // Capture current frame to canvas
+                const context = canvasElement.getContext('2d');
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                context.drawImage(videoElement, 0, 0);
+                
+                // Convert canvas to base64 JPEG
+                const imageBase64 = await new Promise(resolve => {
+                    canvasElement.toBlob(blob => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            // Remove the "data:image/jpeg;base64," prefix
+                            resolve(reader.result.split(',')[1]);
+                        };
+                        reader.readAsDataURL(blob);
+                    }, 'image/jpeg', 0.9);
+                });
+                
+                // Send to API for processing
+                const startTime = performance.now();
+                const response = await fetch('/api/process-image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({ image: imageBase64 })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const endTime = performance.now();
+                const processingTimeMs = Math.round(endTime - startTime);
+                
+                // Hide processing status
+                processingStatus.classList.add('hidden');
+                
+                // Display results
+                displayProcessingResults(result, processingTimeMs);
+                
+                console.log('Frame processed successfully:', result);
+                
+            } catch (error) {
+                console.error('Error processing frame:', error);
+                const errorDisplay = document.getElementById('errorDisplay');
+                errorDisplay.textContent = `Error: ${error.message}`;
+                errorDisplay.classList.remove('hidden');
+            }
+        }
+        
+        // Display processing results in UI
+        function displayProcessingResults(result, processingTimeMs) {
+            // Show processing time
+            document.getElementById('timeValue').textContent = processingTimeMs;
+            document.getElementById('processingTime').classList.remove('hidden');
+            
+            // Clear previous results
+            clearResults();
+            
+            // Display YOLO Detections
+            if (result.yolo_detections && result.yolo_detections.length > 0) {
+                const yoloSection = document.getElementById('yoloSection');
+                const yoloResults = document.getElementById('yoloResults');
+                yoloSection.classList.remove('hidden');
+                
+                yoloResults.innerHTML = result.yolo_detections.map((person, idx) => `
+                    <div class="p-2 bg-blue-50 border border-blue-200 rounded">
+                        <div class="font-medium text-blue-900">Person ${person.person_id}</div>
+                        <div class="text-gray-700">
+                            Confidence: ${(person.yolo_confidence * 100).toFixed(1)}%<br>
+                            Position: (${person.bbox_center.x}, ${person.bbox_center.y})<br>
+                            Area: ${person.area_percentage.toFixed(1)}% of frame
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Display Face Detections
+            if (result.face_detections && result.face_detections.length > 0) {
+                const faceSection = document.getElementById('faceSection');
+                const faceResults = document.getElementById('faceResults');
+                faceSection.classList.remove('hidden');
+                
+                faceResults.innerHTML = result.face_detections.map((face, idx) => `
+                    <div class="p-2 bg-purple-50 border border-purple-200 rounded">
+                        <div class="font-medium text-purple-900">Face ${face.face_id}</div>
+                        <div class="text-gray-700">
+                            Confidence: ${(face.face_confidence * 100).toFixed(1)}%<br>
+                            Position: (${face.face_center.x}, ${face.face_center.y})<br>
+                            Landmarks: ${face.landmarks ? '✓' : '✗'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Display Recognized Persons (Saved to DB)
+            if (result.recognized_persons && result.recognized_persons.length > 0) {
+                const recognizedSection = document.getElementById('recognizedSection');
+                const recognizedResults = document.getElementById('recognizedResults');
+                recognizedSection.classList.remove('hidden');
+                
+                recognizedResults.innerHTML = result.recognized_persons.map((person, idx) => {
+                    // Check if this is a match
+                    if (person.is_match) {
+                        return `
+                            <div class="p-2 bg-yellow-50 border-2 border-yellow-400 rounded">
+                                <div class="font-medium text-yellow-900">🎯 MATCH FOUND!</div>
+                                <div class="text-gray-700">
+                                    <strong>Matched Person:</strong> ${person.matched_name}<br>
+                                    <strong>Similarity:</strong> ${(person.similarity * 100).toFixed(1)}%<br>
+                                    <strong>Type:</strong> ${person.match_type}<br>
+                                    <strong>Detection Count:</strong> #${person.detection_count}<br>
+                                    Embedding: ${person.embedding_length}-dim ArcFace<br>
+                                    Location: (${person.location.x}, ${person.location.y})
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="p-2 bg-green-50 border border-green-200 rounded">
+                                <div class="font-medium text-green-900">✅ NEW PERSON</div>
+                                <div class="text-gray-700">
+                                    Face ID: ${person.saved_face_id || 'Processing...'}<br>
+                                    Embedding: ${person.embedding_length}-dim ArcFace<br>
+                                    Location: (${person.location.x}, ${person.location.y})<br>
+                                    Status: ${person.verification_status}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            }
+            
+            // Display Processing Logs
+            if (result.log_messages && result.log_messages.length > 0) {
+                const logsSection = document.getElementById('logsSection');
+                const logResults = document.getElementById('logResults');
+                logsSection.classList.remove('hidden');
+                
+                logResults.innerHTML = result.log_messages.map(log => `
+                    <div class="text-gray-700">${log}</div>
+                `).join('');
+            }
+        }
+        
+        // Clear results display
+        function clearResults() {
+            document.getElementById('yoloResults').innerHTML = '';
+            document.getElementById('yoloSection').classList.add('hidden');
+            
+            document.getElementById('faceResults').innerHTML = '';
+            document.getElementById('faceSection').classList.add('hidden');
+            
+            document.getElementById('recognizedResults').innerHTML = '';
+            document.getElementById('recognizedSection').classList.add('hidden');
+            
+            document.getElementById('logResults').innerHTML = '';
+            document.getElementById('logsSection').classList.add('hidden');
+            
+            document.getElementById('errorDisplay').classList.add('hidden');
+        }
+        
+        // Toggle fullscreen
+        function toggleFullscreen() {
+            const videoContainer = videoElement.parentElement;
+            
+            if (!document.fullscreenElement) {
+                videoContainer.requestFullscreen().catch(err => {
+                    console.error('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // Check webcam support
+        function checkWebcamSupport() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.error('Webcam not supported in this browser');
+                showWebcamError(new Error('Webcam not supported'));
+                return false;
+            }
+            return true;
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = checkAuth();
+            if (!token) return;
+            
+            // Check webcam support
+            if (!checkWebcamSupport()) return;
+            
+            // Initialize webcam functionality
+            initWebcam();
+            
+            // Fetch user data
+            fetchUserData();
+            
+            // Handle orientation changes and window resize
+            window.addEventListener('resize', handleWindowResize);
+            window.addEventListener('orientationchange', handleOrientationChange);
+        });
+        
+        // Handle window resize
+        function handleWindowResize() {
+            if (videoElement && !videoElement.classList.contains('hidden')) {
+                // Re-apply video layout after resize
+                setTimeout(() => {
+                    handleVideoLoaded();
+                }, 100);
+            }
+        }
+        
+        // Handle orientation change on mobile
+        function handleOrientationChange() {
+            if (videoElement && !videoElement.classList.contains('hidden')) {
+                // Re-apply video layout after orientation change
+                setTimeout(() => {
+                    handleVideoLoaded();
+                }, 500); // Longer delay for orientation change
+            }
+        }
+        
+        // Fetch user data from the API
+        async function fetchUserData() {
+            const userData = await makeAuthenticatedRequest('/api/user');
+            if (userData) {
+                document.getElementById('user-email').textContent = `Welcome, ${userData.email}`;
+            }
+        }
+        
+        // Example function to make authenticated API calls
+        async function makeAuthenticatedRequest(url) {
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.status === 401) {
+                    // Token expired or invalid
+                    localStorage.removeItem('token');
+                    window.location.href = '/login';
+                    return null;
+                }
+                
+                return response.json();
+            } catch (error) {
+                console.error('API request failed:', error);
+                return null;
+            }
+        }
+    </script>
+</body>
+</html>
