@@ -200,8 +200,10 @@
             // Add primary image
             const primaryImage = document.createElement('div');
             primaryImage.className = 'relative group';
+            // Use the actual image_path from API (with angle suffix), not just the ID
+            const primaryImagePath = face.image_path || `${faceId}_front.jpg`;
             primaryImage.innerHTML = `
-                <img src="/static/faces/${faceId}.jpg" class="w-full h-32 object-cover rounded-lg border-2 border-blue-500 transition-transform duration-200 group-hover:scale-105" alt="Primary Image" onerror="this.style.display='none'">
+                <img src="/static/faces/${primaryImagePath}" class="w-full h-32 object-cover rounded-lg border-2 border-blue-500 transition-transform duration-200 group-hover:scale-105" alt="Primary Image" onerror="this.style.display='none'">
                 <div class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">Primary</div>
             `;
             galleryContainer.appendChild(primaryImage);
@@ -284,9 +286,11 @@
             // Create image gallery
             let imageGallery = '';
             if (totalImages > 1) {
+                // Use the actual image_path from API, not just the ID
+                const primaryImagePath = face.image_path || `${face.id}_front.jpg`;
                 imageGallery = `
                     <div class="flex justify-center space-x-1 mt-2">
-                        <img src="/static/faces/${face.id}.jpg" class="w-8 h-8 rounded-full object-cover border-2 border-blue-500" alt="Primary" onerror="this.style.display='none'">
+                        <img src="/static/faces/${primaryImagePath}" class="w-8 h-8 rounded-full object-cover border-2 border-blue-500" alt="Primary" onerror="this.style.display='none'">
                 `;
                 
                 // Add additional images if they exist
@@ -306,7 +310,7 @@
             
             card.innerHTML = `
                 <div class="text-center">
-                    <img src="/static/faces/${face.id}.jpg" class="w-20 h-20 rounded-full mx-auto object-cover mb-3" alt="Face" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik00MCAzNkM0NC40MTgzIDM2IDQ4IDMyLjQxODMgNDggMjhDNDggMjMuNTgxNyA0NC40MTgzIDIwIDQwIDIwQzM1LjU4MTcgMjAgMzIgMjMuNTgxNyAzMiAyOEMzMiAzMi40MTgzIDM1LjU4MTcgMzYgNDAgMzZaIiBmaWxsPSIjOUI5QkExIi8+CjxwYXRoIGQ9Ik0yNCA1MkMyNCA0Ni40NzcyIDI4LjQ3NzIgNDIgMzQgNDJINDZDNTEuNTIyOCA0MiA1NiA0Ni40NzcyIDU2IDUyVjU2SDI0VjUyWiIgZmlsbD0iIzlCOUJBMSIvPgo8L3N2Zz4K'">
+                    <img src="/static/faces/${face.image_path || `${face.id}_front.jpg`}" class="w-20 h-20 rounded-full mx-auto object-cover mb-3" alt="Face" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik00MCAzNkM0NC40MTgzIDM2IDQ4IDMyLjQxODMgNDggMjhDNDggMjMuNTgxNyA0NC40MTgzIDIwIDQwIDIwQzM1LjU4MTcgMjAgMzIgMjMuNTgxNyAzMiAyOEMzMiAzMi40MTgzIDM1LjU4MTcgMzYgNDAgMzZaIiBmaWxsPSIjOUI5QkExIi8+CjxwYXRoIGQ9Ik0yNCA1MkMyNCA0Ni40NzcyIDI4LjQ3NzIgNDIgMzQgNDJINDZDNTEuNTIyOCA0MiA1NiA0Ni40NzcyIDU2IDUyVjU2SDI0VjUyWiIgZmlsbD0iIzlCOUJBMSIvPgo8L3N2Zz4K'">
                     ${imageGallery}
                     <h3 class="font-medium text-gray-900 mb-1">${face.name}</h3>
                     <p class="text-sm text-gray-500 mb-1">Seen ${face.detection_count} times</p>

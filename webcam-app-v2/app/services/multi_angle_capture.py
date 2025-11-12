@@ -4,9 +4,29 @@ Captures face from 4 angles: front, left, right, back
 Stores multiple embeddings for better recognition from any angle
 """
 
+import os
+import sys
+
+# Configure TensorFlow GPU memory optimization BEFORE importing DeepFace
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
+os.environ['TF_GPU_THREAD_PER_CORE'] = '2'
+os.environ['TF_AUTOGRAPH_VERBOSITY'] = '0'
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
+os.environ['TF_DISABLE_MKL'] = 'false'
+
+# Disable CUDA to avoid libdevice errors - use CPU for embedding extraction
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+# Fix CUDA libdevice issue (for reference if needed)
+cuda_path = '/usr/local/cuda'
+if os.path.exists(cuda_path):
+    os.environ['XLA_FLAGS'] = f'--xla_gpu_cuda_data_dir={cuda_path}'
+    os.environ['CUDA_HOME'] = cuda_path
+
 import cv2
 import numpy as np
-import os
 import uuid
 from datetime import datetime
 from deepface import DeepFace
@@ -113,8 +133,8 @@ class MultiAngleCaptureService:
             person_id = str(uuid.uuid4())[:8]
             
             # Extract embeddings from all angles
-            embeddings_data = []
-            image_paths = []
+            # Each element: {angle, embedding, image_path, confidence}
+            capture_data = []
             
             for angle in self.required_angles:
                 if angle not in images:
@@ -127,8 +147,6 @@ class MultiAngleCaptureService:
                 embedding_data = self.extract_face_embedding(image, angle)
                 
                 if embedding_data:
-                    embeddings_data.append(embedding_data)
-                    
                     # Save image
                     image_filename = f"{person_id}_{angle}.jpg"
                     image_path = os.path.join(self.faces_dir, image_filename)
@@ -152,37 +170,51 @@ class MultiAngleCaptureService:
                     
                     face_img = image[y1:y2, x1:x2]
                     cv2.imwrite(image_path, face_img)
-                    image_paths.append(image_filename)
+                    
+                    # Store capture data with angle information
+                    capture_data.append({
+                        "angle": angle,
+                        "embedding": embedding_data["embedding"],
+                        "image_filename": image_filename,
+                        "confidence": embedding_data["confidence"]
+                    })
             
-            if len(embeddings_data) < 2:
+            if len(capture_data) < 2:
                 return {
                     "success": False,
-                    "error": f"Need at least 2 angles captured, got {len(embeddings_data)}"
+                    "error": f"Need at least 2 angles captured, got {len(capture_data)}"
                 }
             
             # Use front angle as primary, or first available
             primary_embedding = None
             primary_image = None
+            primary_data = None
             
-            for i, emb_data in enumerate(embeddings_data):
-                if emb_data["angle"] == "front":
-                    primary_embedding = emb_data["embedding"]
-                    primary_image = image_paths[i]
+            # Search for front angle first
+            for data in capture_data:
+                if data["angle"] == "front":
+                    primary_data = data
                     break
             
-            if primary_embedding is None:
-                primary_embedding = embeddings_data[0]["embedding"]
-                primary_image = image_paths[0]
+            # If no front angle, use first available
+            if primary_data is None:
+                primary_data = capture_data[0]
             
-            # Store additional embeddings
+            primary_embedding = primary_data["embedding"]
+            primary_image = primary_data["image_filename"]
+            
+            # Store additional embeddings (all except primary)
             backup_embeddings = []
-            for emb_data in embeddings_data:
-                if emb_data["embedding"] != primary_embedding:
+            for data in capture_data:
+                if data["embedding"] != primary_embedding:
                     backup_embeddings.append({
-                        "angle": emb_data["angle"],
-                        "embedding": emb_data["embedding"],
-                        "confidence": emb_data["confidence"]
+                        "angle": data["angle"],
+                        "embedding": data["embedding"],
+                        "confidence": data["confidence"]
                     })
+            
+            # Get all image paths
+            image_paths = [data["image_filename"] for data in capture_data]
             
             # Save to database
             person = FacePerson(
@@ -193,7 +225,7 @@ class MultiAngleCaptureService:
                 image_path=primary_image,
                 thumbnail_path=primary_image,
                 image_paths=image_paths,
-                embedding_count=len(embeddings_data),
+                embedding_count=len(capture_data),
                 detection_count=1,
                 last_seen=datetime.utcnow(),
                 created_at=datetime.utcnow(),
@@ -209,8 +241,10 @@ class MultiAngleCaptureService:
                 "success": True,
                 "person_id": person_id,
                 "person_name": person_name,
-                "angles_captured": [e["angle"] for e in embeddings_data],
-                "total_embeddings": len(embeddings_data),
+                "primary_angle": primary_data["angle"],
+                "primary_image": primary_image,
+                "angles_captured": [d["angle"] for d in capture_data],
+                "total_embeddings": len(capture_data),
                 "image_paths": image_paths
             }
             

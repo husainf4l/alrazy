@@ -1,3 +1,25 @@
+import os
+import sys
+
+# ==================== CRITICAL: Configure TensorFlow and GPU before imports ====================
+# Set environment variables BEFORE importing TensorFlow/DeepFace
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Reduce TensorFlow logging (0=all, 1=info, 2=warning, 3=error)
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  # Allow GPU memory to grow gradually instead of allocating all at once
+os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'  # GPU thread mode optimization
+os.environ['TF_GPU_THREAD_PER_CORE'] = '2'  # Threads per GPU core
+os.environ['TF_AUTOGRAPH_VERBOSITY'] = '0'  # Disable verbose autograph logging
+
+# Fix CUDA libdevice issue
+cuda_path = '/usr/local/cuda'
+if os.path.exists(cuda_path):
+    os.environ['XLA_FLAGS'] = f'--xla_gpu_cuda_data_dir={cuda_path}'
+    os.environ['CUDA_HOME'] = cuda_path
+
+# Disable JIT compilation to avoid libdevice errors (use eager execution instead)
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
+
+# ==================== END GPU Configuration ====================
+
 from fastapi import FastAPI, Request, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -365,21 +387,18 @@ async def test_face_recognition(request: Request):
                         # Match against database
                         match_result = matching_service.get_best_match(embedding)
                         
-                        print(f"DEBUG: Match result = {match_result}")  # Debug log
-                        
-                        if match_result and match_result.get("similarity"):
+                        if match_result:  # match_result is not None when match found
                             faces.append({
-                                "person_name": match_result.get("name", "Unknown"),
-                                "person_id": match_result.get("person_id"),
-                                "match_confidence": match_result.get("similarity", 0),
-                                "detection_count": 0,
+                                "person_name": match_result["name"],
+                                "person_id": match_result["face_id"],
+                                "match_confidence": match_result["similarity"],
+                                "detection_count": match_result.get("detection_count", 0),
                                 "x": 0,
                                 "y": 0,
                                 "width": 0,
                                 "height": 0
                             })
                         else:
-                            print("DEBUG: No match found or match below threshold")
                             faces.append({
                                 "person_name": "Unknown",
                                 "person_id": None,
