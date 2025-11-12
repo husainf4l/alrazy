@@ -1,0 +1,426 @@
+<!DOCTYPE html><!DOCTYPE html>
+
+<html lang="en"><html lang="en">
+
+<head><head>
+
+    <meta charset="UTF-8">    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Advanced Test - Cameras</title>    <meta name="description" content="Advanced Camera Monitoring System">
+
+    <script src="https://cdn.tailwindcss.com"></script>    <title>Advanced Test - Camera Monitoring</title>
+
+    <style>    <script src="https://cdn.tailwindcss.com"></script>
+
+        body { background-color: #f5f5f5; }    <style>
+
+        .camera-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; }        body {
+
+        @media (min-width: 768px) { .camera-grid { grid-template-columns: repeat(2, 1fr); } }            background-color: #f5f5f5;
+
+        @media (min-width: 1024px) { .camera-grid { grid-template-columns: repeat(3, 1fr); } }        }
+
+        @media (min-width: 1536px) { .camera-grid { grid-template-columns: repeat(5, 1fr); } }
+
+        .camera-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); transition: all 0.3s ease; }        .camera-grid {
+
+        .camera-card:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); transform: translateY(-2px); }            display: grid;
+
+        .video-container { position: relative; width: 100%; padding-bottom: 75%; background: #000; overflow: hidden; }            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+
+        .video-container canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }            gap: 1.5rem;
+
+        .camera-info { padding: 1rem; }        }
+
+        .camera-name { font-weight: 600; color: #1f2937; font-size: 0.95rem; }
+
+        .camera-status { font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem; }        @media (min-width: 768px) {
+
+        .status-badge { position: absolute; top: 0.5rem; right: 0.5rem; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; background: rgba(0, 0, 0, 0.7); color: white; }            .camera-grid {
+
+        .fps-display { position: absolute; bottom: 0.5rem; right: 0.5rem; background: rgba(0, 0, 0, 0.7); color: #10b981; padding: 4px 8px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 600; }                grid-template-columns: repeat(2, 1fr);
+
+        .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }            }
+
+        .dot-connected { background: #10b981; }        }
+
+        .dot-loading { background: #3b82f6; animation: pulse 1.5s ease-in-out infinite; }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }        @media (min-width: 1024px) {
+
+    </style>            .camera-grid {
+
+</head>                grid-template-columns: repeat(3, 1fr);
+
+<body class="bg-gray-100">            }
+
+    {% include 'components/sidebar.html' %}        }
+
+
+
+    <div class="lg:ml-64 p-4 md:p-8">        @media (min-width: 1536px) {
+
+        <div class="mb-6">            .camera-grid {
+
+            <h1 class="text-3xl font-light text-gray-900">Advanced Test</h1>                grid-template-columns: repeat(5, 1fr);
+
+            <p class="text-gray-600 text-sm mt-1">Real-time camera monitoring</p>            }
+
+        </div>        }
+
+
+
+        <div class="camera-grid" id="cameraGrid">        .camera-card {
+
+            <div class="camera-card"><div class="video-container bg-gray-300 animate-pulse"></div></div>            background: white;
+
+            <div class="camera-card"><div class="video-container bg-gray-300 animate-pulse"></div></div>            border-radius: 8px;
+
+            <div class="camera-card"><div class="video-container bg-gray-300 animate-pulse"></div></div>            overflow: hidden;
+
+            <div class="camera-card"><div class="video-container bg-gray-300 animate-pulse"></div></div>            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+            <div class="camera-card"><div class="video-container bg-gray-300 animate-pulse"></div></div>            transition: all 0.3s ease;
+
+        </div>        }
+
+    </div>
+
+        .camera-card:hover {
+
+    <script>            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+        const CONFIG = { frameInterval: 500, reconnectInterval: 2000 };            transform: translateY(-2px);
+
+        }
+
+        function checkAuth() {
+
+            const token = localStorage.getItem('token');        .video-container {
+
+            if (!token) { window.location.href = '/login'; return false; }            position: relative;
+
+            return token;            width: 100%;
+
+        }            padding-bottom: 75%;
+
+            background: #000;
+
+        async function initializeCameras() {            overflow: hidden;
+
+            try {        }
+
+                const token = checkAuth();
+
+                if (!token) return;        .video-container canvas {
+
+                const response = await fetch('/api/ip-cameras/initialize', {            position: absolute;
+
+                    method: 'POST',            top: 0;
+
+                    headers: { 'Authorization': `Bearer ${token}` }            left: 0;
+
+                });            width: 100%;
+
+                if (response.ok) { setTimeout(loadCameras, 1000); }            height: 100%;
+
+            } catch (error) { console.error('Initialization error:', error); }            object-fit: cover;
+
+        }        }
+
+
+
+        async function loadCameras() {        .camera-info {
+
+            try {            padding: 1rem;
+
+                const token = localStorage.getItem('token');        }
+
+                const response = await fetch('/api/ip-cameras/status', {
+
+                    headers: { 'Authorization': `Bearer ${token}` }        .camera-name {
+
+                });            font-weight: 600;
+
+                const data = await response.json();            color: #1f2937;
+
+                renderCameras(data.cameras || {});            font-size: 0.95rem;
+
+            } catch (error) { console.error('Load error:', error); }        }
+
+        }
+
+        .camera-status {
+
+        function renderCameras(cameras) {            font-size: 0.85rem;
+
+            const grid = document.getElementById('cameraGrid');            color: #6b7280;
+
+            grid.innerHTML = '';            margin-top: 0.25rem;
+
+            Object.entries(cameras).forEach(([name, status]) => {        }
+
+                const card = document.createElement('div');
+
+                card.className = 'camera-card';        .status-badge {
+
+                card.innerHTML = `            position: absolute;
+
+                    <div class="video-container relative">            top: 0.5rem;
+
+                        <canvas id="camera-${name}"></canvas>            right: 0.5rem;
+
+                        <div class="status-badge">            display: inline-flex;
+
+                            <span class="dot ${status.status === 'connected' ? 'dot-connected' : 'dot-loading'}"></span>            align-items: center;
+
+                            <span>${status.status === 'connected' ? 'Live' : 'Connecting'}</span>            gap: 6px;
+
+                        </div>            padding: 6px 12px;
+
+                        <div class="fps-display">${status.fps} FPS</div>            border-radius: 6px;
+
+                    </div>            font-size: 12px;
+
+                    <div class="camera-info">            font-weight: 500;
+
+                        <h3 class="camera-name">${name}</h3>            background: rgba(0, 0, 0, 0.7);
+
+                        <p class="camera-status">${status.status === 'connected' ? '✓ Active' : '⏳ Connecting'}</p>            color: white;
+
+                    </div>        }
+
+                `;
+
+                grid.appendChild(card);        .fps-display {
+
+                streamCamera(name);            position: absolute;
+
+            });            bottom: 0.5rem;
+
+        }            right: 0.5rem;
+
+            background: rgba(0, 0, 0, 0.7);
+
+        async function streamCamera(cameraName) {            color: #10b981;
+
+            const canvas = document.getElementById(`camera-${cameraName}`);            padding: 4px 8px;
+
+            if (!canvas) return;            border-radius: 4px;
+
+            font-family: 'Courier New', monospace;
+
+            const fetchFrame = async () => {            font-size: 12px;
+
+                try {            font-weight: 600;
+
+                    const token = localStorage.getItem('token');        }
+
+                    const response = await fetch(`/api/ip-cameras/frame/${cameraName}`, {
+
+                        headers: { 'Authorization': `Bearer ${token}` }        .dot {
+
+                    });            width: 6px;
+
+                    const data = await response.json();            height: 6px;
+
+                    if (data.frame) {            border-radius: 50%;
+
+                        const img = new Image();            display: inline-block;
+
+                        img.onload = () => {        }
+
+                            canvas.width = img.width;
+
+                            canvas.height = img.height;        .dot-connected {
+
+                            canvas.getContext('2d').drawImage(img, 0, 0);            background: #10b981;
+
+                            setTimeout(fetchFrame, CONFIG.frameInterval);        }
+
+                        };
+
+                        img.src = data.frame;        .dot-loading {
+
+                    } else {            background: #3b82f6;
+
+                        setTimeout(fetchFrame, CONFIG.reconnectInterval);            animation: pulse 1.5s ease-in-out infinite;
+
+                    }        }
+
+                } catch (error) {
+
+                    console.error(`Stream error for ${cameraName}:`, error);        @keyframes pulse {
+
+                    setTimeout(fetchFrame, CONFIG.reconnectInterval);            0%, 100% { opacity: 1; }
+
+                }            50% { opacity: 0.5; }
+
+            };        }
+
+            fetchFrame();    </style>
+
+        }</head>
+
+<body class="bg-gray-100">
+
+        document.addEventListener('DOMContentLoaded', () => {    {% include 'components/sidebar.html' %}
+
+            if (checkAuth()) { initializeCameras(); }
+
+        });    <!-- Main Content Area -->
+
+    </script>    <div class="p-4 md:p-8 lg:ml-64">
+
+</body>        <div class="mb-6">
+
+</html>            <h1 class="text-3xl font-light text-gray-900">Advanced Test</h1>
+
+            <p class="text-gray-600 text-sm mt-1">Real-time camera monitoring</p>
+        </div>
+
+            </div>
+        </div>
+    </div>
+                <!-- Loading placeholders -->
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            frameInterval: 500,
+            reconnectInterval: 2000
+        };
+
+        // Authentication check
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return token;
+        }
+
+        // Initialize cameras
+        async function initializeCameras() {
+            try {
+                const token = checkAuth();
+                if (!token) return;
+
+                const response = await fetch('/api/ip-cameras/initialize', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    setTimeout(loadCameras, 1000);
+                }
+            } catch (error) {
+                console.error('Initialization error:', error);
+            }
+        }
+
+        // Load cameras
+        async function loadCameras() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/ip-cameras/status', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                renderCameras(data.cameras || {});
+            } catch (error) {
+                console.error('Load error:', error);
+            }
+        }
+
+        // Render cameras
+        function renderCameras(cameras) {
+            const grid = document.getElementById('cameraGrid');
+            grid.innerHTML = '';
+
+            Object.entries(cameras).forEach(([name, status]) => {
+                const card = document.createElement('div');
+                card.className = 'camera-card';
+                card.innerHTML = `
+                    <div class="video-container relative">
+                        <canvas id="camera-${name}"></canvas>
+                        <div class="status-badge">
+                            <span class="dot ${status.status === 'connected' ? 'dot-connected' : 'dot-loading'}"></span>
+                            <span>${status.status === 'connected' ? 'Live' : 'Connecting'}</span>
+                        </div>
+                        <div class="fps-display">${status.fps} FPS</div>
+                    </div>
+                    <div class="camera-info">
+                        <h3 class="camera-name">${name}</h3>
+                        <p class="camera-status">${status.status === 'connected' ? '✓ Active' : '⏳ Connecting'}</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+                streamCamera(name);
+            });
+        }
+
+        // Stream camera frames
+        async function streamCamera(cameraName) {
+            const canvas = document.getElementById(`camera-${cameraName}`);
+            if (!canvas) return;
+
+            const fetchFrame = async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const response = await fetch(`/api/ip-cameras/frame/${cameraName}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await response.json();
+
+                    if (data.frame) {
+                        const img = new Image();
+                        img.onload = () => {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            canvas.getContext('2d').drawImage(img, 0, 0);
+                            setTimeout(fetchFrame, CONFIG.frameInterval);
+                        };
+                        img.src = data.frame;
+                    } else {
+                        setTimeout(fetchFrame, CONFIG.reconnectInterval);
+                    }
+                } catch (error) {
+                    console.error(`Stream error for ${cameraName}:`, error);
+                    setTimeout(fetchFrame, CONFIG.reconnectInterval);
+                }
+            };
+
+            fetchFrame();
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkAuth()) {
+                initializeCameras();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Management - Brinks Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    {% include 'components/sidebar.html' %}
+
+    <div class="lg:ml-64">
+        <!-- Mobile Header -->
+        <div class="lg:hidden bg-white shadow-sm">
+            <div class="flex items-center justify-between p-4">
+                <button onclick="openMobileSidebar()" class="text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+                <h1 class="text-lg font-semibold text-gray-900">Brinks Demo</h1>
+                <div class="w-6"></div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="p-6">
+            <div class="max-w-6xl mx-auto">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Face Recognition Database</h2>
+                    <p class="text-gray-600">Manage detected faces and their recognition models</p>
+                    <div id="stats-bar" class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 hidden">
+                        <div class="flex items-center justify-between text-sm">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                </svg>
+                                <span id="total-people" class="font-semibold text-blue-900">0 People</span>
+                            </div>
+                            <div class="flex space-x-6 text-gray-600">
+                                <span id="total-images" class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    0 Images
+                                </span>
+                                <span id="total-detections" class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                    </svg>
+                                    0 Detections
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Face Grid -->
+                <div id="faces-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <!-- Face cards will be populated here -->
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading" class="text-center py-12">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <p class="mt-2 text-gray-600">Loading faces...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="hidden text-center py-12">
+                    <div class="text-gray-400 mb-4">
+                        <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">No faces detected yet</h3>
+                    <p class="text-gray-600">Use the webcam to detect and save faces</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Name Modal -->
+    <div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4">Edit Person Name</h3>
+            <div class="mb-4">
+                <img id="modal-face-image" class="w-24 h-24 rounded-full mx-auto object-cover" src="" alt="Face">
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                <input type="text" id="person-name" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex gap-3">
+                <button id="cancel-edit" class="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button id="save-name" class="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Gallery Modal -->
+    <div id="gallery-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="gallery-title" class="text-lg font-semibold">All Images</h3>
+                <button onclick="closeGalleryModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="gallery-images" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <!-- Images will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4 text-red-600">Delete Person</h3>
+            <div class="mb-4">
+                <img id="delete-face-image" class="w-24 h-24 rounded-full mx-auto object-cover" src="" alt="Face">
+            </div>
+            <div class="mb-6">
+                <p class="text-gray-700 text-center">
+                    Are you sure you want to delete <span id="delete-person-name" class="font-semibold"></span>?
+                </p>
+                <p class="text-sm text-gray-500 text-center mt-2">
+                    This will permanently remove the face embedding and image from the database. This action cannot be undone.
+                </p>
+            </div>
+            <div class="flex gap-3">
+                <button id="cancel-delete" class="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button id="confirm-delete" class="flex-1 py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEditId = null;
+        let currentDeleteId = null;
+        let currentFaceData = {};
+
+        // Load faces on page load
+        document.addEventListener('DOMContentLoaded', loadFaces);
+
+        // Modal controls
+        document.getElementById('cancel-edit').addEventListener('click', closeEditModal);
+        document.getElementById('save-name').addEventListener('click', saveName);
+        document.getElementById('cancel-delete').addEventListener('click', closeDeleteModal);
+        document.getElementById('confirm-delete').addEventListener('click', confirmDelete);
+
+        async function loadFaces() {
+            try {
+                const response = await fetch('/api/faces');
+                const faces = await response.json();
+                
+                // Store face data for gallery viewing
+                faces.forEach(face => {
+                    currentFaceData[face.id] = face;
+                });
+                
+                document.getElementById('loading').classList.add('hidden');
+                
+                if (faces.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden');
+                    return;
+                }
+
+                renderFaces(faces);
+            } catch (error) {
+                console.error('Error loading faces:', error);
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('empty-state').classList.remove('hidden');
+            }
+        }
+
+        function viewImages(faceId, name) {
+            const face = currentFaceData[faceId];
+            if (!face) return;
+            
+            document.getElementById('gallery-title').textContent = `${name} - All Images`;
+            const galleryContainer = document.getElementById('gallery-images');
+            galleryContainer.innerHTML = '';
+            
+            // Add primary image
+            const primaryImage = document.createElement('div');
+            primaryImage.className = 'relative group';
+            // Use the actual image_path from API (with angle suffix), not just the ID
+            const primaryImagePath = face.image_path || `${faceId}_front.jpg`;
+            primaryImage.innerHTML = `
+                <img src="/static/faces/${primaryImagePath}" class="w-full h-32 object-cover rounded-lg border-2 border-blue-500 transition-transform duration-200 group-hover:scale-105" alt="Primary Image" onerror="this.style.display='none'">
+                <div class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">Primary</div>
+            `;
+            galleryContainer.appendChild(primaryImage);
+            
+            // Add additional images if they exist
+            if (face.image_paths && face.image_paths.length > 0) {
+                face.image_paths.forEach((imagePath, index) => {
+                    const filename = imagePath.split('/').pop();
+                    const imageDiv = document.createElement('div');
+                    imageDiv.className = 'relative group';
+                    imageDiv.innerHTML = `
+                        <img src="/static/faces/${filename}" class="w-full h-32 object-cover rounded-lg border border-gray-300 transition-transform duration-200 group-hover:scale-105" alt="Additional Image ${index + 1}" onerror="this.style.display='none'">
+                        <div class="absolute bottom-2 left-2 bg-gray-600 text-white text-xs px-2 py-1 rounded-full font-medium">View ${index + 2}</div>
+                    `;
+                    galleryContainer.appendChild(imageDiv);
+                });
+            }
+            
+            document.getElementById('gallery-modal').classList.remove('hidden');
+        }
+
+        function closeGalleryModal() {
+            document.getElementById('gallery-modal').classList.add('hidden');
+        }
+
+        function renderFaces(faces) {
+            const grid = document.getElementById('faces-grid');
+            grid.innerHTML = '';
+
+            // Update statistics
+            updateStatistics(faces);
+
+            faces.forEach(face => {
+                const card = createFaceCard(face);
+                grid.appendChild(card);
+            });
+        }
+
+        function updateStatistics(faces) {
+            const statsBar = document.getElementById('stats-bar');
+            const totalPeople = faces.length;
+            let totalImages = 0;
+            let totalDetections = 0;
+
+            faces.forEach(face => {
+                totalImages += 1 + (face.image_paths ? face.image_paths.length : 0);
+                totalDetections += face.detection_count;
+            });
+
+            document.getElementById('total-people').textContent = `${totalPeople} ${totalPeople === 1 ? 'Person' : 'People'}`;
+            document.getElementById('total-images').innerHTML = `
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                ${totalImages} ${totalImages === 1 ? 'Image' : 'Images'}
+            `;
+            document.getElementById('total-detections').innerHTML = `
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+                ${totalDetections} ${totalDetections === 1 ? 'Detection' : 'Detections'}
+            `;
+
+            if (totalPeople > 0) {
+                statsBar.classList.remove('hidden');
+            } else {
+                statsBar.classList.add('hidden');
+            }
+        }
+
+        function createFaceCard(face) {
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-lg p-4 shadow-sm border border-gray-200';
+            
+            // Calculate total images count
+            const totalImages = 1 + (face.image_paths ? face.image_paths.length : 0);
+            const embeddingCount = face.embedding_count || 1;
+            
+            // Create image gallery
+            let imageGallery = '';
+            if (totalImages > 1) {
+                // Use the actual image_path from API, not just the ID
+                const primaryImagePath = face.image_path || `${face.id}_front.jpg`;
+                imageGallery = `
+                    <div class="flex justify-center space-x-1 mt-2">
+                        <img src="/static/faces/${primaryImagePath}" class="w-8 h-8 rounded-full object-cover border-2 border-blue-500" alt="Primary" onerror="this.style.display='none'">
+                `;
+                
+                // Add additional images if they exist
+                if (face.image_paths && face.image_paths.length > 0) {
+                    face.image_paths.slice(0, 3).forEach((imagePath, index) => {
+                        const filename = imagePath.split('/').pop();
+                        imageGallery += `<img src="/static/faces/${filename}" class="w-8 h-8 rounded-full object-cover border border-gray-300" alt="View ${index + 2}" onerror="this.style.display='none'">`;
+                    });
+                    
+                    // Show "+X more" if there are more than 4 total images
+                    if (totalImages > 4) {
+                        imageGallery += `<div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-600">+${totalImages - 4}</div>`;
+                    }
+                }
+                imageGallery += '</div>';
+            }
+            
+            card.innerHTML = `
+                <div class="text-center">
+                    <img src="/static/faces/${face.image_path || `${face.id}_front.jpg`}" class="w-20 h-20 rounded-full mx-auto object-cover mb-3" alt="Face" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik00MCAzNkM0NC40MTgzIDM2IDQ4IDMyLjQxODMgNDggMjhDNDggMjMuNTgxNyA0NC40MTgzIDIwIDQwIDIwQzM1LjU4MTcgMjAgMzIgMjMuNTgxNyAzMiAyOEMzMiAzMi40MTgzIDM1LjU4MTcgMzYgNDAgMzZaIiBmaWxsPSIjOUI5QkExIi8+CjxwYXRoIGQ9Ik0yNCA1MkMyNCA0Ni40NzcyIDI4LjQ3NzIgNDIgMzQgNDJINDZDNTEuNTIyOCA0MiA1NiA0Ni40NzcyIDU2IDUyVjU2SDI0VjUyWiIgZmlsbD0iIzlCOUJBMSIvPgo8L3N2Zz4K'">
+                    ${imageGallery}
+                    <h3 class="font-medium text-gray-900 mb-1">${face.name}</h3>
+                    <p class="text-sm text-gray-500 mb-1">Seen ${face.detection_count} times</p>
+                    <div class="flex justify-center space-x-4 mb-2">
+                        <div class="text-xs text-gray-400 flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            ${totalImages} image${totalImages > 1 ? 's' : ''}
+                        </div>
+                        <div class="text-xs text-gray-400 flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            ${embeddingCount} model${embeddingCount > 1 ? 's' : ''}
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-400 mb-3">${formatDate(face.last_seen || face.created_at)}</p>
+                    <div class="space-y-2">
+                        ${totalImages > 1 ? `
+                            <button onclick="viewImages('${face.id}', '${face.name}')" class="w-full py-1.5 px-3 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors duration-200 flex items-center justify-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                View All (${totalImages})
+                            </button>
+                        ` : ''}
+                        <button onclick="window.location.href='/person/${face.id}'" class="w-full py-2 px-3 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors duration-200 flex items-center justify-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                            </svg>
+                            View Details
+                        </button>
+                        <button onclick="editFace('${face.id}', '${face.name}')" class="w-full py-2 px-3 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 flex items-center justify-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                            Edit Name
+                        </button>
+                        <button onclick="deleteFace('${face.id}', '${face.name}')" class="w-full py-2 px-3 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors duration-200 flex items-center justify-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        function editFace(id, currentName) {
+            currentEditId = id;
+            document.getElementById('person-name').value = currentName;
+            document.getElementById('modal-face-image').src = `/static/faces/${id}.jpg`;
+            document.getElementById('edit-modal').classList.remove('hidden');
+        }
+
+        function deleteFace(id, name) {
+            currentDeleteId = id;
+            document.getElementById('delete-person-name').textContent = name;
+            document.getElementById('delete-face-image').src = `/static/faces/${id}.jpg`;
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+            currentEditId = null;
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+            currentDeleteId = null;
+        }
+
+        async function confirmDelete() {
+            if (!currentDeleteId) return;
+
+            try {
+                const response = await fetch(`/api/faces/${currentDeleteId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    closeDeleteModal();
+                    loadFaces(); // Reload the faces
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to delete face: ${error.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error deleting face:', error);
+                alert('Failed to delete face');
+            }
+        }
+
+        async function saveName() {
+            if (!currentEditId) return;
+            
+            const newName = document.getElementById('person-name').value.trim();
+            if (!newName) {
+                alert('Please enter a name');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/faces/${currentEditId}/name`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: newName })
+                });
+
+                if (response.ok) {
+                    closeEditModal();
+                    loadFaces(); // Reload the faces
+                } else {
+                    alert('Failed to update name');
+                }
+            } catch (error) {
+                console.error('Error updating name:', error);
+                alert('Failed to update name');
+            }
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+    </script>
+</body>
+</html>
