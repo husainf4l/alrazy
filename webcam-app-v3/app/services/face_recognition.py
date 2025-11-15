@@ -15,8 +15,9 @@ os.environ['TF_AUTOGRAPH_VERBOSITY'] = '0'
 os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'  # Disable XLA JIT compilation
 os.environ['TF_DISABLE_MKL'] = 'false'
 
-# Disable CUDA to avoid libdevice errors - use CPU for embedding extraction
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
+# ENABLE GPU for faster face recognition
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # Use GPU 0 for face recognition
+os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # Async GPU operations
 
 # Fix CUDA libdevice issue (for reference if needed)
 cuda_path = '/usr/local/cuda'
