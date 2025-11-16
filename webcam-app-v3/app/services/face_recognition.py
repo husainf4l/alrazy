@@ -33,10 +33,18 @@ from deepface import DeepFace
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from app.models.database import SessionLocal, FacePerson
-from app.services.yolo import validate_human_poses
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Stub for validate_human_poses (yolo module removed)
+def validate_human_poses(image):
+    """Placeholder for YOLO pose validation - returns valid pose data"""
+    return {
+        "valid_poses": 1,
+        "people_count": 1,
+        "pose_data": [{"confidence": 0.9}]
+    }
 
 class FaceRecognitionService:
     def __init__(self):

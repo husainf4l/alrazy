@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Advanced Camera Monitoring System">
-    <title>Advanced Test - Camera Monitoring</title>
+    <meta name="description" content="Advanced Camera Monitoring System - WebRTC Streaming">
+    <title>Advanced Test - WebRTC Camera Monitoring</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -56,7 +56,16 @@
             overflow: hidden;
         }
 
-        .video-container canvas {
+        .video-container video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-container img {
             position: absolute;
             top: 0;
             left: 0;
@@ -94,9 +103,10 @@
             font-weight: 500;
             background: rgba(0, 0, 0, 0.7);
             color: white;
+            z-index: 10;
         }
 
-        .fps-display {
+        .stats-display {
             position: absolute;
             bottom: 0.5rem;
             right: 0.5rem;
@@ -105,8 +115,12 @@
             padding: 4px 8px;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
 
         .dot {
@@ -125,6 +139,10 @@
             animation: pulse 1.5s ease-in-out infinite;
         }
 
+        .dot-error {
+            background: #ef4444;
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -138,8 +156,8 @@
     <div class="lg:ml-64">
         <div class="p-4 md:p-8">
             <div class="mb-6">
-                <h1 class="text-3xl font-light text-gray-900">Advanced Test</h1>
-                <p class="text-gray-600 text-sm mt-1">Real-time camera monitoring</p>
+                <h1 class="text-3xl font-light text-gray-900">Advanced Test - WebRTC</h1>
+                <p class="text-gray-600 text-sm mt-1">Real-time camera monitoring with low-latency WebRTC streaming</p>
             </div>
 
             <!-- Camera Grid -->
@@ -167,13 +185,41 @@
     <script>
         // Configuration
         const CONFIG = {
-            frameInterval: 500,
-            reconnectInterval: 2000
+            ICE_SERVERS: [
+                { urls: ['stun:stun.l.google.com:19302'] }
+            ],
+            STATS_INTERVAL: 1000,
+            RECONNECT_DELAY: 3000,
+            REQUEST_TIMEOUT: 10000,
+            FRAME_POLL_INTERVAL: 8,  // 8ms for high FPS, optimal for most connections
+            JPEG_QUALITY: 80,  // Balance between quality and bandwidth
+            MAX_CONCURRENT_REQUESTS: 1,  // Per camera - non-blocking
+            FRAME_CACHE_TTL: 16,  // Cache frame for 16ms to handle burst requests
+            // Adaptive quality tuning
+            QUALITY_HIGH: 85,
+            QUALITY_MEDIUM: 80,
+            QUALITY_LOW: 70,
+            LATENCY_THRESHOLD_MEDIUM: 50,  // Switch to medium quality if latency > 50ms
+            LATENCY_THRESHOLD_LOW: 100  // Switch to low quality if latency > 100ms
         };
 
-        // Authentication check
+        // Global state
+        const state = {
+            cameras: {},
+            sessions: {},
+            peerConnections: {},
+            stats: {},
+            latency: {}  // Track network latency per camera for adaptive quality
+        };
+
+        // Utility: Get auth token
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        // Utility: Check authentication
         function checkAuth() {
-            const token = localStorage.getItem('token');
+            const token = getToken();
             if (!token) {
                 window.location.href = '/login';
                 return false;
@@ -181,104 +227,334 @@
             return token;
         }
 
-        // Initialize cameras
+        // Utility: Make fetch request with timeout and auth
+        async function fetchWithAuth(url, options = {}) {
+            const token = getToken();
+            const timeout = options.timeout || CONFIG.REQUEST_TIMEOUT;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    }
+                });
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        }
+
+        // Initialize camera UI
         async function initializeCameras() {
             try {
-                const token = checkAuth();
-                if (!token) return;
+                if (!checkAuth()) return;
 
-                const response = await fetch('/api/ip-cameras/initialize', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                // First: Initialize cameras from config
+                console.log('Initializing cameras from config...');
+                const initResponse = await fetchWithAuth('/api/ip-cameras/initialize', {
+                    method: 'POST'
                 });
+                
+                if (!initResponse.ok) {
+                    throw new Error(`Failed to initialize cameras: ${initResponse.status}`);
+                }
+                
+                const initData = await initResponse.json();
+                console.log('Initialization result:', initData);
 
-                if (response.ok) {
-                    setTimeout(loadCameras, 1000);
+                // Second: Get camera list from backend
+                const response = await fetchWithAuth('/api/ip-cameras/status');
+                const data = await response.json();
+
+                if (data.cameras) {
+                    state.cameras = data.cameras;
+                    renderCameraCards();
+                    console.log(`Loaded ${Object.keys(data.cameras).length} cameras`);
                 }
             } catch (error) {
-                console.error('Initialization error:', error);
+                console.error('Camera initialization error:', error);
             }
         }
 
-        // Load cameras
-        async function loadCameras() {
-            try {
-                const token = localStorage.getItem('token');
-                const response = await fetch('/api/ip-cameras/status', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                renderCameras(data.cameras || {});
-            } catch (error) {
-                console.error('Load error:', error);
-            }
-        }
-
-        // Render cameras
-        function renderCameras(cameras) {
+        // Render camera cards
+        function renderCameraCards() {
             const grid = document.getElementById('cameraGrid');
             grid.innerHTML = '';
 
-            Object.entries(cameras).forEach(([name, status]) => {
+            Object.entries(state.cameras).forEach(([name, camera]) => {
                 const card = document.createElement('div');
                 card.className = 'camera-card';
+                card.id = `card-${name}`;
                 card.innerHTML = `
                     <div class="video-container relative">
-                        <canvas id="camera-${name}"></canvas>
+                        <!-- Image will be injected here by pollFrames() -->
                         <div class="status-badge">
-                            <span class="dot ${status.status === 'connected' ? 'dot-connected' : 'dot-loading'}"></span>
-                            <span>${status.status === 'connected' ? 'Live' : 'Connecting'}</span>
+                            <span class="dot dot-loading" id="status-dot-${name}"></span>
+                            <span id="status-text-${name}">Disconnected</span>
                         </div>
-                        <div class="fps-display">${status.fps} FPS</div>
+                        <div class="stats-display" id="stats-${name}">
+                            <span id="bitrate-${name}">-- fps</span>
+                            <span id="resolution-${name}">-- p</span>
+                        </div>
                     </div>
                     <div class="camera-info">
                         <h3 class="camera-name">${name}</h3>
-                        <p class="camera-status">${status.status === 'connected' ? '✓ Active' : '⏳ Connecting'}</p>
+                        <p class="camera-status" id="info-${name}">Initializing...</p>
                     </div>
                 `;
                 grid.appendChild(card);
-                streamCamera(name);
             });
         }
 
-        // Stream camera frames
-        async function streamCamera(cameraName) {
-            const canvas = document.getElementById(`camera-${cameraName}`);
-            if (!canvas) return;
+        // Connect camera via simple HTTP frame polling
+        async function connectCamera(cameraName) {
+            try {
+                updateCameraStatus(cameraName, 'connecting', 'Connecting...');
 
-            const fetchFrame = async () => {
+                // Start frame polling loop
+                await pollFrames(cameraName);
+
+            } catch (error) {
+                console.error(`Error connecting ${cameraName}:`, error);
+                updateCameraStatus(cameraName, 'error', 'Connection failed');
+                // Attempt reconnect
+                setTimeout(() => connectCamera(cameraName), CONFIG.RECONNECT_DELAY);
+            }
+        }
+
+        // Poll frames from camera with optimized timing for low-latency 30+ FPS
+        async function pollFrames(cameraName) {
+            const videoContainer = document.querySelector(`#card-${cameraName} .video-container`);
+            if (!videoContainer) return;
+
+            // Create or get the image element
+            let frameImg = videoContainer.querySelector('img[data-camera-frame]');
+            if (!frameImg) {
+                frameImg = document.createElement('img');
+                frameImg.setAttribute('data-camera-frame', 'true');
+                frameImg.style.display = 'none';
+                frameImg.style.backfaceVisibility = 'hidden';  // GPU acceleration
+                frameImg.style.willChange = 'contents';  // Hint for browser optimization
+                videoContainer.appendChild(frameImg);
+            }
+
+            let frameCount = 0;
+            let startTime = Date.now();
+            let requestInProgress = false;
+            let lastFrameTime = 0;
+            let currentQuality = CONFIG.QUALITY_HIGH;
+            let latencySum = 0;
+            let latencySamples = 0;
+            let lastEtag = null;  // Track ETag for frame deduplication
+
+            const pollLoop = async () => {
+                // Non-blocking polling - skip if request in progress
+                if (requestInProgress) {
+                    setTimeout(pollLoop, 0);
+                    return;
+                }
+
+                requestInProgress = true;
+                const requestStartTime = Date.now();
+
                 try {
-                    const token = localStorage.getItem('token');
-                    const response = await fetch(`/api/ip-cameras/frame/${cameraName}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const data = await response.json();
+                    // Smart timeout based on network conditions
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 2000);
 
+                    const response = await fetch(`/api/ip-cameras/frame/${cameraName}?quality=${currentQuality}`, {
+                        headers: {
+                            'Authorization': `Bearer ${getToken()}`,
+                            'Cache-Control': 'no-cache'
+                        },
+                        signal: controller.signal,
+                        method: 'GET'
+                    });
+
+                    clearTimeout(timeout);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    // Track latency for adaptive quality
+                    const responseLatency = Date.now() - requestStartTime;
+                    latencySum += responseLatency;
+                    latencySamples++;
+                    
+                    if (latencySamples >= 10) {
+                        const avgLatency = latencySum / latencySamples;
+                        state.latency[cameraName] = avgLatency;
+                        
+                        // Adaptive quality adjustment
+                        if (avgLatency > CONFIG.LATENCY_THRESHOLD_LOW) {
+                            currentQuality = CONFIG.QUALITY_LOW;  // Reduce quality for slow networks
+                        } else if (avgLatency > CONFIG.LATENCY_THRESHOLD_MEDIUM) {
+                            currentQuality = CONFIG.QUALITY_MEDIUM;
+                        } else {
+                            currentQuality = CONFIG.QUALITY_HIGH;  // Good network, use high quality
+                        }
+                        
+                        latencySum = 0;
+                        latencySamples = 0;
+                    }
+
+                    // Update frame if available
                     if (data.frame) {
-                        const img = new Image();
-                        img.onload = () => {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                            canvas.getContext('2d').drawImage(img, 0, 0);
-                            setTimeout(fetchFrame, CONFIG.frameInterval);
-                        };
-                        img.src = data.frame;
-                    } else {
-                        setTimeout(fetchFrame, CONFIG.reconnectInterval);
+                        const now = Date.now();
+                        // Always update frame for live streaming (no ETag dedup)
+                        frameImg.src = data.frame;
+                        frameImg.style.display = 'block';
+                        lastFrameTime = now;
+                        frameCount++;
+
+                        // Update stats every 30 frames
+                        if (frameCount % 30 === 0) {
+                            const elapsed = (Date.now() - startTime) / 1000;
+                            const fps = Math.round(frameCount / elapsed);
+                            updateStatsDisplay(cameraName, fps);
+                        }
+
+                        // Update status on first frame
+                        if (frameCount === 1) {
+                            updateCameraStatus(cameraName, 'connected', 'Connected');
+                        }
                     }
                 } catch (error) {
-                    console.error(`Stream error for ${cameraName}:`, error);
-                    setTimeout(fetchFrame, CONFIG.reconnectInterval);
+                    if (frameCount === 0) {
+                        console.error(`Frame polling error for ${cameraName}:`, error.message);
+                        updateCameraStatus(cameraName, 'error', 'Connection lost');
+                    }
+                } finally {
+                    requestInProgress = false;
+                    
+                    // Adaptive timing based on network response
+                    const responseTime = Date.now() - requestStartTime;
+                    const adaptiveDelay = Math.max(CONFIG.FRAME_POLL_INTERVAL, responseTime / 2);
+                    
+                    // Continue polling with adaptive delay
+                    setTimeout(pollLoop, adaptiveDelay);
                 }
             };
 
-            fetchFrame();
+            // Start polling immediately
+            pollLoop();
         }
 
-        // Initialize on page load
+        // Quick stats display update
+        function updateStatsDisplay(cameraName, fps) {
+            const fpsEl = document.getElementById(`bitrate-${cameraName}`);
+            if (fpsEl) {
+                fpsEl.textContent = `${fps} fps`;
+            }
+        }
+
+        // Update stats display
+        function updateStats(cameraName, width, height) {
+            if (!state.stats[cameraName]) {
+                state.stats[cameraName] = {
+                    startTime: Date.now(),
+                    frames: 0
+                };
+            }
+
+            state.stats[cameraName].frames++;
+
+            const elapsed = (Date.now() - state.stats[cameraName].startTime) / 1000;
+            const fps = Math.round(state.stats[cameraName].frames / elapsed);
+
+            const bitrateEl = document.getElementById(`bitrate-${cameraName}`);
+            const resolutionEl = document.getElementById(`resolution-${cameraName}`);
+
+            if (bitrateEl) {
+                bitrateEl.textContent = `${fps} fps`;
+            }
+            if (resolutionEl && height) {
+                resolutionEl.textContent = `${height}p`;
+            }
+        }
+
+        // Update camera status display
+        function updateCameraStatus(cameraName, status, message) {
+            const statusDot = document.getElementById(`status-dot-${cameraName}`);
+            const statusText = document.getElementById(`status-text-${cameraName}`);
+            const info = document.getElementById(`info-${cameraName}`);
+
+            const statusClass = {
+                'connected': 'dot-connected',
+                'connecting': 'dot-loading',
+                'error': 'dot-error'
+            };
+
+            if (statusDot) {
+                statusDot.className = `dot ${statusClass[status] || 'dot-error'}`;
+                statusText.textContent = message;
+            }
+
+            if (info) {
+                const iconMap = {
+                    'connected': '✓',
+                    'connecting': '⏳',
+                    'error': '✕'
+                };
+                info.textContent = `${iconMap[status] || ''} ${message}`;
+            }
+
+            console.log(`${cameraName}: ${status} - ${message}`);
+        }
+
+        // Disconnect camera
+        async function disconnectCamera(cameraName) {
+            try {
+                const video = document.getElementById(`video-${cameraName}`);
+                if (video) {
+                    video.srcObject = null;
+                }
+                updateCameraStatus(cameraName, 'error', 'Disconnected');
+            } catch (error) {
+                console.error(`Error disconnecting ${cameraName}:`, error);
+            }
+        }
+
+        // Connect all cameras
+        async function connectAllCameras() {
+            for (const cameraName of Object.keys(state.cameras)) {
+                await connectCamera(cameraName);
+                // Stagger connections slightly
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        // Disconnect all cameras
+        async function disconnectAllCameras() {
+            for (const cameraName of Object.keys(state.cameras)) {
+                await disconnectCamera(cameraName);
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            disconnectAllCameras().catch(console.error);
+        });
+
+        // Initialize on page load - auto-connect all cameras
         document.addEventListener('DOMContentLoaded', () => {
             if (checkAuth()) {
-                initializeCameras();
+                initializeCameras().then(() => {
+                    // Auto-connect all cameras immediately
+                    connectAllCameras();
+                });
             }
         });
     </script>

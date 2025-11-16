@@ -21,7 +21,7 @@ os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices=false'
 # ==================== END GPU Configuration ====================
 
 from fastapi import FastAPI, Request, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -38,7 +38,10 @@ from app.services.auth import (
 from app.services.face_recognition import get_face_service
 from app.services.webcam_processor import get_webcam_processor
 from app.services.multi_angle_capture import get_multi_angle_service
+from app.services.webrtc_service import get_webrtc_manager, init_webrtc_manager
 from pydantic import BaseModel
+import uuid
+import json
 import base64
 import cv2
 import numpy as np
@@ -67,6 +70,20 @@ class MultiAngleCaptureRequest(BaseModel):
     left_image: Optional[str] = None
     right_image: Optional[str] = None
     back_image: Optional[str] = None
+
+class WebRTCSessionRequest(BaseModel):
+    camera_name: str
+
+class WebRTCOfferRequest(BaseModel):
+    session_id: str
+    offer: str
+
+class WebRTCCandidateRequest(BaseModel):
+    session_id: str
+    candidate: Dict
+
+class WebRTCCloseRequest(BaseModel):
+    session_id: str
 
 # Initialize database
 try:
@@ -451,9 +468,22 @@ async def get_ip_cameras_status():
         import json
         
         manager = get_camera_manager()
-        status = manager.get_all_cameras_status()
         
-        return JSONResponse(content={"cameras": status})
+        # Return camera status with timeout
+        cameras = {}
+        for name, camera in manager.cameras.items():
+            try:
+                cameras[name] = camera.get_status()
+            except Exception as e:
+                cameras[name] = {
+                    "name": name,
+                    "status": "error",
+                    "error": str(e),
+                    "fps": 0,
+                    "has_frame": False
+                }
+        
+        return JSONResponse(content={"cameras": cameras})
     except Exception as e:
         logger.error(f"Error getting camera status: {e}")
         return JSONResponse(content={"error": str(e), "cameras": {}}, status_code=500)
@@ -461,7 +491,7 @@ async def get_ip_cameras_status():
 
 @app.post("/api/ip-cameras/initialize")
 async def initialize_ip_cameras(request: Request):
-    """Initialize IP cameras from configuration"""
+    """Initialize IP cameras from configuration (non-blocking)"""
     try:
         import json
         import os
@@ -481,20 +511,27 @@ async def initialize_ip_cameras(request: Request):
         
         manager = get_camera_manager()
         
-        # Initialize cameras
+        # Initialize cameras in background (non-blocking)
         initialized_cameras = {}
         for camera_name, camera_info in config.get("streams", {}).items():
             rtsp_url = camera_info.get("url", "")
-            success = manager.add_camera(camera_name, rtsp_url)
-            initialized_cameras[camera_name] = {
-                "success": success,
-                "url": rtsp_url
-            }
+            # Just register the camera name without waiting for connection
+            try:
+                manager.add_camera(camera_name, rtsp_url)
+                initialized_cameras[camera_name] = {
+                    "success": True,
+                    "url": rtsp_url
+                }
+            except Exception as e:
+                initialized_cameras[camera_name] = {
+                    "success": False,
+                    "error": str(e)
+                }
         
         return JSONResponse(content={
             "message": "Cameras initialized",
             "cameras": initialized_cameras
-        })
+        }, status_code=200)
         
     except Exception as e:
         import traceback
@@ -507,29 +544,53 @@ async def initialize_ip_cameras(request: Request):
 
 
 @app.get("/api/ip-cameras/frame/{camera_name}")
-async def get_ip_camera_frame(camera_name: str):
-    """Get current frame from a specific IP camera"""
+async def get_ip_camera_frame(camera_name: str, quality: int = 80):
+    """Get current frame from a specific IP camera (low-latency) with adaptive quality and caching headers"""
     try:
         from app.services.ip_camera_service import get_camera_manager
-        import base64
+        import json
+        
+        # Clamp quality to valid range
+        quality = max(70, min(90, quality))
         
         manager = get_camera_manager()
-        frame = manager.get_frame(camera_name)
+        camera = manager.cameras.get(camera_name)
         
-        if frame is None:
+        if camera is None:
+            return JSONResponse(
+                content={"error": f"Camera not found: {camera_name}"},
+                status_code=404
+            )
+        
+        # Get ETag for cache validation
+        etag = camera.get_frame_etag()
+        
+        # Pre-encoded base64 frame with specified quality
+        frame_b64 = camera.get_frame_b64(quality=quality)
+        
+        if frame_b64 is None:
             return JSONResponse(
                 content={"error": f"No frame available from {camera_name}"},
                 status_code=404
             )
         
-        # Encode frame to base64
-        _, buffer = cv2.imencode('.jpg', frame)
-        frame_b64 = base64.b64encode(buffer).decode('utf-8')
-        
-        return JSONResponse(content={
+        # Create JSON response data
+        response_data = {
             "camera": camera_name,
-            "frame": f"data:image/jpeg;base64,{frame_b64}"
-        })
+            "frame": frame_b64,
+            "etag": etag
+        }
+        
+        # Return with proper cache headers
+        return Response(
+            content=json.dumps(response_data),
+            media_type="application/json",
+            headers={
+                "ETag": etag if etag else '""',
+                "Cache-Control": "public, max-age=0, must-revalidate",
+                "Pragma": "no-cache"
+            }
+        )
         
     except Exception as e:
         import traceback
@@ -560,233 +621,148 @@ async def stop_all_cameras():
         )
 
 
-# ============= WEBRTC CAMERA ROUTES =============
+# ============= WEBRTC STREAMING =============
 
-# Pydantic models for WebRTC
-class WebRTCOfferRequest(BaseModel):
-    offer: str  # SDP offer as JSON string
-    camera_name: str
-
-class WebRTCAnswerResponse(BaseModel):
-    answer: str
-    session_id: str
-
-class WebRTCIceCandidateRequest(BaseModel):
-    session_id: str
-    candidate: Dict
+@app.get("/advanced-test", response_class=HTMLResponse)
+async def advanced_test_page(request: Request):
+    """Serve the advanced test page with WebRTC camera streaming"""
+    return templates.TemplateResponse("advanced_test.html", {"request": request})
 
 
 @app.post("/api/webrtc/create-session")
-async def create_webrtc_session(request: Request, current_user = Depends(get_current_user)):
-    """Create a new WebRTC session and get offer"""
+async def create_webrtc_session(
+    request: WebRTCSessionRequest,
+    current_user = Depends(get_current_user)
+):
+    """Create a new WebRTC session for a camera"""
     try:
-        # Lazy import to avoid startup issues
-        import uuid
-        from app.services.webrtc_camera_service import get_webrtc_manager
-        
-        data = await request.json()
-        camera_name = data.get("camera_name", "")
-        rtsp_url = data.get("rtsp_url", "")
-        
-        if not camera_name or not rtsp_url:
-            return JSONResponse(
-                content={"error": "Missing camera_name or rtsp_url"},
-                status_code=400
-            )
-        
-        # Create session ID
+        manager = get_webrtc_manager()
         session_id = str(uuid.uuid4())
         
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
+        await manager.create_session(session_id, request.camera_name)
         
-        # Create WebRTC connection
-        pc = await manager.create_session(session_id, camera_name, rtsp_url)
-        if not pc:
-            return JSONResponse(
-                content={"error": "Failed to create WebRTC connection"},
-                status_code=500
-            )
-        
-        # Create offer
-        offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        
-        return JSONResponse(content={
-            "session_id": session_id,
-            "offer": {
-                "type": pc.localDescription.type,
-                "sdp": pc.localDescription.sdp
-            }
-        })
-        
+        return JSONResponse(
+            content={
+                "session_id": session_id,
+                "camera_name": request.camera_name,
+                "message": "WebRTC session created"
+            },
+            status_code=201
+        )
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating WebRTC session: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
+        raise HTTPException(status_code=500, detail="Failed to create session")
 
 
-@app.post("/api/webrtc/handle-answer")
-async def handle_webrtc_answer(request: Request, current_user = Depends(get_current_user)):
-    """Handle SDP answer from client"""
+@app.post("/api/webrtc/handle-offer")
+async def handle_webrtc_offer(
+    request: WebRTCOfferRequest,
+    current_user = Depends(get_current_user)
+):
+    """Handle SDP offer and return answer"""
     try:
-        # Lazy import to avoid startup issues
-        from app.services.webrtc_camera_service import get_webrtc_manager
-        from aiortc import RTCSessionDescription
+        manager = get_webrtc_manager()
+        answer_sdp = await manager.handle_offer(request.session_id, request.offer)
         
-        data = await request.json()
-        session_id = data.get("session_id", "")
-        answer_sdp = data.get("answer", {})
-        
-        if not session_id or not answer_sdp:
-            return JSONResponse(
-                content={"error": "Missing session_id or answer"},
-                status_code=400
-            )
-        
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
-        
-        # Get session
-        with manager.lock:
-            if session_id not in manager.sessions:
-                return JSONResponse(
-                    content={"error": "Session not found"},
-                    status_code=404
-                )
-            
-            session = manager.sessions[session_id]
-            pc = session.pc
-        
-        # Set remote description
-        answer = RTCSessionDescription(
-            sdp=answer_sdp.get("sdp", ""),
-            type=answer_sdp.get("type", "answer")
-        )
-        await pc.setRemoteDescription(answer)
-        
-        logger.info(f"WebRTC answer handled for session {session_id}")
-        
-        return JSONResponse(content={"success": True})
-        
-    except Exception as e:
-        logger.error(f"Error handling WebRTC answer: {e}")
         return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
+            content={
+                "session_id": request.session_id,
+                "answer": answer_sdp
+            }
         )
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error handling SDP offer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle offer")
 
 
 @app.post("/api/webrtc/add-ice-candidate")
-async def add_ice_candidate(request: Request, current_user = Depends(get_current_user)):
-    """Add ICE candidate for WebRTC connection"""
+async def add_ice_candidate(
+    request: WebRTCCandidateRequest,
+    current_user = Depends(get_current_user)
+):
+    """Add ICE candidate"""
     try:
-        # Lazy import to avoid startup issues
-        from app.services.webrtc_camera_service import get_webrtc_manager
+        manager = get_webrtc_manager()
+        candidate_json = json.dumps(request.candidate)
+        await manager.add_ice_candidate(request.session_id, candidate_json)
         
-        data = await request.json()
-        session_id = data.get("session_id", "")
-        candidate = data.get("candidate", {})
-        
-        if not session_id or not candidate:
-            return JSONResponse(
-                content={"error": "Missing session_id or candidate"},
-                status_code=400
-            )
-        
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
-        
-        # Add ICE candidate
-        await manager.add_ice_candidate(session_id, candidate)
-        
-        return JSONResponse(content={"success": True})
-        
+        return JSONResponse(
+            content={
+                "session_id": request.session_id,
+                "message": "ICE candidate added"
+            }
+        )
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error adding ICE candidate: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
+        raise HTTPException(status_code=500, detail="Failed to add candidate")
 
 
 @app.post("/api/webrtc/close-session")
-async def close_webrtc_session(request: Request, current_user = Depends(get_current_user)):
+async def close_webrtc_session(
+    request: WebRTCCloseRequest,
+    current_user = Depends(get_current_user)
+):
     """Close a WebRTC session"""
     try:
-        # Lazy import to avoid startup issues
-        from app.services.webrtc_camera_service import get_webrtc_manager
+        manager = get_webrtc_manager()
+        await manager.close_session(request.session_id)
         
-        data = await request.json()
-        session_id = data.get("session_id", "")
-        
-        if not session_id:
-            return JSONResponse(
-                content={"error": "Missing session_id"},
-                status_code=400
-            )
-        
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
-        
-        # Close session
-        await manager.close_session(session_id)
-        
-        return JSONResponse(content={"success": True})
-        
+        return JSONResponse(
+            content={
+                "session_id": request.session_id,
+                "message": "Session closed"
+            }
+        )
+    
     except Exception as e:
         logger.error(f"Error closing WebRTC session: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
+        raise HTTPException(status_code=500, detail="Failed to close session")
+
+
+@app.get("/api/webrtc/sessions")
+async def get_webrtc_sessions(current_user = Depends(get_current_user)):
+    """Get all active WebRTC sessions"""
+    try:
+        manager = get_webrtc_manager()
+        sessions_stats = []
+        
+        for session_id in manager.sessions.keys():
+            stats = manager.get_session_stats(session_id)
+            sessions_stats.append(stats)
+        
+        return JSONResponse(content={"sessions": sessions_stats})
+    
+    except Exception as e:
+        logger.error(f"Error getting WebRTC sessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get sessions")
 
 
 @app.post("/api/webrtc/close-all")
 async def close_all_webrtc_sessions(current_user = Depends(get_current_user)):
     """Close all WebRTC sessions"""
     try:
-        # Lazy import to avoid startup issues
-        from app.services.webrtc_camera_service import get_webrtc_manager
+        manager = get_webrtc_manager()
+        count = len(manager.sessions)
+        await manager.close_all_sessions()
         
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
-        
-        # Close all sessions
-        await manager.close_all()
-        
-        return JSONResponse(content={"success": True})
-        
+        return JSONResponse(
+            content={
+                "message": f"Closed {count} sessions"
+            }
+        )
+    
     except Exception as e:
         logger.error(f"Error closing all WebRTC sessions: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
-
-
-@app.get("/api/webrtc/stats")
-async def get_webrtc_stats(current_user = Depends(get_current_user)):
-    """Get WebRTC connection statistics"""
-    try:
-        # Lazy import to avoid startup issues
-        from app.services.webrtc_camera_service import get_webrtc_manager
-        
-        # Get WebRTC manager
-        manager = await get_webrtc_manager()
-        
-        return JSONResponse(content={
-            "active_sessions": manager.get_session_count()
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting WebRTC stats: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
+        raise HTTPException(status_code=500, detail="Failed to close sessions")
 
 
 # ============= APPLICATION LIFECYCLE =============
@@ -794,10 +770,73 @@ async def get_webrtc_stats(current_user = Depends(get_current_user)):
 @app.on_event("startup")
 async def startup_event():
     """Application startup"""
+    try:
+        # Load camera configuration
+        config_path = "config/cameras.json"
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Initialize IP camera manager
+            from app.services.ip_camera_service import get_camera_manager
+            manager = get_camera_manager()
+            for camera_name, camera_config in config.get("streams", {}).items():
+                rtsp_url = camera_config.get("url")
+                if rtsp_url:
+                    manager.add_camera(camera_name, rtsp_url)
+            print(f"✅ IP camera manager initialized with {len(config.get('streams', {}))} cameras")
+            
+            # Initialize WebRTC manager with camera URLs
+            camera_urls = {}
+            for camera_name, camera_config in config.get("streams", {}).items():
+                rtsp_url = camera_config.get("url")
+                if rtsp_url:
+                    camera_urls[camera_name] = rtsp_url
+            
+            ice_servers = config.get("server", {}).get("ice_servers", 
+                                                       ["stun:stun.l.google.com:19302"])
+            
+            init_webrtc_manager(camera_urls, ice_servers)
+            print(f"✅ WebRTC manager initialized with {len(camera_urls)} cameras")
+        else:
+            print("⚠️  Camera configuration not found")
+    
+    except Exception as e:
+        logger.error(f"Failed to initialize: {e}")
+        print(f"⚠️  Initialization failed: {e}")
+    
     print("🚀 Application started")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown"""
+    try:
+        # Clean up IP cameras
+        from app.services.ip_camera_service import get_camera_manager
+        manager = get_camera_manager()
+        manager.stop_all()
+        print("✅ Stopped all IP camera streams")
+    except Exception as e:
+        logger.error(f"Error stopping IP cameras: {e}")
+    
+    try:
+        # Clean up WebRTC sessions
+        manager = get_webrtc_manager()
+        await manager.close_all_sessions()
+        print("✅ Closed all WebRTC sessions")
+    except Exception as e:
+        logger.error(f"Error closing WebRTC sessions: {e}")
+    
     print("👋 Application shutdown")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+        log_level="info"
+    )
