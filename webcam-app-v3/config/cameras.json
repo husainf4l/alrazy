@@ -1,0 +1,33 @@
+{
+  "server": {
+    "http_port": ":8083",
+    "ice_servers": ["stun:stun.l.google.com:19302"]
+  },
+  "streams": {
+    "camera2_back_yard": {
+      "on_demand": true,
+      "disable_audio": false,
+      "url": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/201"
+    },
+    "camera3_garage": {
+      "on_demand": true,
+      "disable_audio": false,
+      "url": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/301"
+    },
+    "camera4_side_entrance": {
+      "on_demand": true,
+      "disable_audio": false,
+      "url": "rtsp://admin:tt55oo77@192.168.1.186:554/Streaming/Channels/401"
+    },
+    "camera5": {
+      "on_demand": true,
+      "disable_audio": false,
+      "url": "rtsp://admin:tt55oo77@192.168.1.219:554/Streaming/Channels/101"
+    },
+    "camera6": {
+      "on_demand": true,
+      "disable_audio": false,
+      "url": "rtsp://admin:tt55oo77@192.168.1.219:554/Streaming/Channels/201"
+    }
+  }
+}

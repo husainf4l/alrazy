@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Details - Brinks Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    {% include 'components/sidebar.html' %}
+
+    <div class="lg:ml-64">
+        <!-- Mobile Header -->
+        <div class="lg:hidden bg-white shadow-sm">
+            <div class="flex items-center justify-between p-4">
+                <button onclick="openMobileSidebar()" class="text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+                <h1 class="text-lg font-semibold text-gray-900">Person Details</h1>
+                <a href="/faces" class="text-blue-600 hover:text-blue-800">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="p-6">
+            <div class="max-w-7xl mx-auto">
+                <!-- Header with Navigation -->
+                <div class="flex items-center justify-between mb-8">
+                    <div class="flex items-center space-x-4">
+                        <a href="/faces" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors duration-200">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                        </a>
+                        <div>
+                            <h1 id="person-name" class="text-3xl font-bold text-gray-900">Loading...</h1>
+                            <p class="text-gray-600">Person Recognition Profile</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button id="edit-name-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                            Edit Name
+                        </button>
+                        <button id="delete-person-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading" class="text-center py-12">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <p class="mt-4 text-gray-600">Loading person details...</p>
+                </div>
+
+                <!-- Content Grid -->
+                <div id="content" class="hidden">
+                    <!-- Statistics Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <p class="text-sm font-medium text-gray-500">Total Detections</p>
+                                    <p id="stat-detections" class="text-2xl font-bold text-gray-900">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <p class="text-sm font-medium text-gray-500">Images Stored</p>
+                                    <p id="stat-images" class="text-2xl font-bold text-gray-900">0</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <p class="text-sm font-medium text-gray-500">Recognition Models</p>
+                                    <p id="stat-embeddings" class="text-2xl font-bold text-gray-900">0</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <div id="accuracy-icon" class="w-12 h-12 rounded-lg flex items-center justify-center">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <p class="text-sm font-medium text-gray-500">Recognition Quality</p>
+                                    <p id="stat-accuracy" class="text-lg font-bold">Loading...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Profile and Images Section -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Profile Information -->
+                        <div class="lg:col-span-1">
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                <div class="p-6">
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Profile Information</h3>
+                                    <div class="text-center mb-6">
+                                        <img id="primary-image" class="w-32 h-32 rounded-full mx-auto object-cover border-4 border-blue-500 shadow-lg" src="" alt="Primary Image">
+                                        <div class="mt-3">
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                                                Primary Photo
+                                            </span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="space-y-4">
+                                        <div class="border-t pt-4">
+                                            <dl class="grid grid-cols-1 gap-4">
+                                                <div>
+                                                    <dt class="text-sm font-medium text-gray-500">First Detected</dt>
+                                                    <dd id="created-date" class="text-sm text-gray-900 mt-1">-</dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-sm font-medium text-gray-500">Last Seen</dt>
+                                                    <dd id="last-seen-date" class="text-sm text-gray-900 mt-1">-</dd>
+                                                </div>
+                                                <div>
+                                                    <dt class="text-sm font-medium text-gray-500">Profile Updated</dt>
+                                                    <dd id="updated-date" class="text-sm text-gray-900 mt-1">-</dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Images Gallery -->
+                        <div class="lg:col-span-2">
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+                                <div class="p-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <h3 class="text-lg font-semibold text-gray-900">Recognition Gallery</h3>
+                                        <span id="image-count" class="text-sm text-gray-500">0 images</span>
+                                    </div>
+                                    
+                                    <div id="images-grid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                                        <!-- Images will be populated here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Name Modal -->
+    <div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4">Edit Person Name</h3>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                <input type="text" id="person-name-input" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex gap-3">
+                <button id="cancel-edit" class="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button id="save-name" class="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4 text-red-600">Delete Person</h3>
+            <div class="mb-6">
+                <p class="text-gray-700 text-center">
+                    Are you sure you want to delete this person's profile?
+                </p>
+                <p class="text-sm text-gray-500 text-center mt-2">
+                    This will permanently remove all recognition data, images, and models. This action cannot be undone.
+                </p>
+            </div>
+            <div class="flex gap-3">
+                <button id="cancel-delete" class="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button id="confirm-delete" class="flex-1 py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const personId = '{{ person_id }}';
+        let personData = null;
+
+        // Load person details on page load
+        document.addEventListener('DOMContentLoaded', loadPersonDetails);
+
+        // Modal controls
+        document.getElementById('edit-name-btn').addEventListener('click', openEditModal);
+        document.getElementById('delete-person-btn').addEventListener('click', openDeleteModal);
+        document.getElementById('cancel-edit').addEventListener('click', closeEditModal);
+        document.getElementById('save-name').addEventListener('click', saveName);
+        document.getElementById('cancel-delete').addEventListener('click', closeDeleteModal);
+        document.getElementById('confirm-delete').addEventListener('click', confirmDelete);
+
+        async function loadPersonDetails() {
+            try {
+                const response = await fetch(`/api/person/${personId}`);
+                if (!response.ok) {
+                    throw new Error('Person not found');
+                }
+                
+                personData = await response.json();
+                renderPersonDetails(personData);
+                
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('Error loading person details:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="text-red-500 mb-4">
+                            <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">Person Not Found</h3>
+                        <p class="text-gray-600 mb-4">The requested person could not be found.</p>
+                        <a href="/faces" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                            Back to Faces
+                        </a>
+                    </div>
+                `;
+            }
+        }
+
+        function renderPersonDetails(person) {
+            // Update page title and header
+            document.getElementById('person-name').textContent = person.name;
+            document.title = `${person.name} - Person Details`;
+
+            // Update statistics
+            document.getElementById('stat-detections').textContent = person.detection_count;
+            document.getElementById('stat-images').textContent = person.total_images;
+            document.getElementById('stat-embeddings').textContent = person.embedding_count;
+
+            // Update accuracy display
+            const accuracyElement = document.getElementById('stat-accuracy');
+            const accuracyIcon = document.getElementById('accuracy-icon');
+            
+            if (person.accuracy_score >= 80) {
+                accuracyIcon.className = 'w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center';
+                accuracyIcon.querySelector('svg').className = 'w-6 h-6 text-green-600';
+                accuracyElement.className = 'text-lg font-bold text-green-600';
+            } else if (person.accuracy_score >= 60) {
+                accuracyIcon.className = 'w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center';
+                accuracyIcon.querySelector('svg').className = 'w-6 h-6 text-yellow-600';
+                accuracyElement.className = 'text-lg font-bold text-yellow-600';
+            } else {
+                accuracyIcon.className = 'w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center';
+                accuracyIcon.querySelector('svg').className = 'w-6 h-6 text-red-600';
+                accuracyElement.className = 'text-lg font-bold text-red-600';
+            }
+            accuracyElement.textContent = person.recognition_quality;
+
+            // Update profile information
+            if (person.primary_image) {
+                document.getElementById('primary-image').src = `/static/faces/${person.id}.jpg`;
+            }
+            
+            document.getElementById('created-date').textContent = formatDate(person.created_at);
+            document.getElementById('last-seen-date').textContent = formatDate(person.last_seen);
+            document.getElementById('updated-date').textContent = formatDate(person.updated_at);
+
+            // Render images gallery
+            renderImagesGallery(person);
+        }
+
+        function renderImagesGallery(person) {
+            const grid = document.getElementById('images-grid');
+            const imageCount = document.getElementById('image-count');
+            
+            imageCount.textContent = `${person.total_images} ${person.total_images === 1 ? 'image' : 'images'}`;
+            grid.innerHTML = '';
+
+            // Add primary image
+            if (person.primary_image) {
+                const primaryDiv = document.createElement('div');
+                primaryDiv.className = 'relative group cursor-pointer';
+                primaryDiv.innerHTML = `
+                    <img src="/static/faces/${person.id}.jpg" class="w-full h-24 object-cover rounded-lg border-2 border-blue-500 transition-transform duration-200 group-hover:scale-105" alt="Primary">
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-opacity duration-200"></div>
+                    <div class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">Primary</div>
+                `;
+                grid.appendChild(primaryDiv);
+            }
+
+            // Add additional images
+            if (person.image_paths && person.image_paths.length > 0) {
+                person.image_paths.forEach((imagePath, index) => {
+                    const filename = imagePath.split('/').pop();
+                    const imageDiv = document.createElement('div');
+                    imageDiv.className = 'relative group cursor-pointer';
+                    imageDiv.innerHTML = `
+                        <img src="/static/faces/${filename}" class="w-full h-24 object-cover rounded-lg border border-gray-300 transition-transform duration-200 group-hover:scale-105" alt="Additional ${index + 1}">
+                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-opacity duration-200"></div>
+                        <div class="absolute bottom-2 left-2 bg-gray-600 text-white text-xs px-2 py-1 rounded-full font-medium">View ${index + 2}</div>
+                    `;
+                    grid.appendChild(imageDiv);
+                });
+            }
+        }
+
+        function openEditModal() {
+            if (personData) {
+                document.getElementById('person-name-input').value = personData.name;
+                document.getElementById('edit-modal').classList.remove('hidden');
+            }
+        }
+
+        function openDeleteModal() {
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+        }
+
+        async function saveName() {
+            const newName = document.getElementById('person-name-input').value.trim();
+            if (!newName) {
+                alert('Please enter a name');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/faces/${personId}/name`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: newName })
+                });
+
+                if (response.ok) {
+                    closeEditModal();
+                    loadPersonDetails(); // Reload the page data
+                } else {
+                    alert('Failed to update name');
+                }
+            } catch (error) {
+                console.error('Error updating name:', error);
+                alert('Failed to update name');
+            }
+        }
+
+        async function confirmDelete() {
+            try {
+                const response = await fetch(`/api/faces/${personId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Redirect to faces page after successful deletion
+                    window.location.href = '/faces';
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to delete person: ${error.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error deleting person:', error);
+                alert('Failed to delete person');
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+    </script>
+</body>
+</html>

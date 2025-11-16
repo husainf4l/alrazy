@@ -1,0 +1,143 @@
+<!-- Shared Sidebar Component -->
+<!-- Mobile Overlay -->
+<div id="mobile-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden hidden"></div>
+
+<!-- Sidebar -->
+<div id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-gray-50 border-r border-gray-200 flex flex-col transform -translate-x-full lg:translate-x-0 lg:static lg:inset-0 transition-transform duration-300 ease-in-out">
+    <!-- Sidebar Header -->
+    <div class="p-4 lg:p-6 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <span class="text-white text-sm font-medium">B</span>
+                </div>
+                <div>
+                    <h1 class="text-sm font-medium text-gray-900">Brinks Demo</h1>
+                    <p class="text-xs text-gray-500" id="sidebar-page-label">Dashboard</p>
+                </div>
+            </div>
+            <!-- Close button for mobile -->
+            <button id="close-sidebar" class="lg:hidden text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Navigation Menu -->
+    <nav class="flex-1 p-3 lg:p-4">
+        <ul class="space-y-2">
+            <li>
+                <a href="/dashboard" id="nav-overview" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    Overview
+                </a>
+            </li>
+            <li>
+                <a href="/dashboard#rooms" id="nav-rooms" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    Rooms
+                </a>
+            </li>
+            <li>
+                <a href="/webcam" id="nav-webcam" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    Webcam
+                </a>
+            </li>
+            <li>
+                <a href="/faces" id="nav-faces" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    Faces
+                </a>
+            </li>
+            <li>
+                <a href="/test-webcam" id="nav-test-webcam" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    🧪 Test Recognition
+                </a>
+            </li>
+            <li>
+                <a href="/advanced_test" id="nav-advanced-test" class="nav-item w-full text-left px-3 py-2 text-sm font-light text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-200 block">
+                    🔬 Advance Test
+                </a>
+            </li>
+        </ul>
+    </nav>
+    
+    <!-- User Info -->
+    <div class="p-3 lg:p-4 border-t border-gray-200">
+        <div class="flex items-center justify-between">
+            <span id="user-email" class="text-xs font-light text-gray-600">Loading...</span>
+            <button onclick="logout()" class="text-xs font-light text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                Logout
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Mobile sidebar functionality - Make functions globally available immediately
+window.openMobileSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    if (sidebar && overlay) {
+        sidebar.classList.remove('-translate-x-full');
+        overlay.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+};
+
+window.closeMobileSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    if (sidebar && overlay) {
+        sidebar.classList.add('-translate-x-full');
+        overlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+};
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    const closeSidebar = document.getElementById('close-sidebar');
+    
+    // Close sidebar when clicking overlay
+    if (overlay) {
+        overlay.addEventListener('click', closeMobileSidebar);
+    }
+    
+    // Close sidebar when clicking close button
+    if (closeSidebar) {
+        closeSidebar.addEventListener('click', closeMobileSidebar);
+    }
+    
+    // Close sidebar when clicking a nav link on mobile
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', function() {
+            if (window.innerWidth < 1024) { // lg breakpoint
+                closeMobileSidebar();
+            }
+        });
+    });
+
+    // Set active nav item and page label based on current page
+    const currentPath = window.location.pathname;
+    const pageLabel = document.getElementById('sidebar-page-label');
+    
+    // Remove active class from all nav items
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('bg-gray-100');
+    });
+    
+    // Set active nav item and page label based on current path
+    if (currentPath === '/webcam') {
+        document.getElementById('nav-webcam').classList.add('bg-gray-100');
+        if (pageLabel) pageLabel.textContent = 'Webcam';
+    } else if (currentPath === '/faces') {
+        document.getElementById('nav-faces').classList.add('bg-gray-100');
+        if (pageLabel) pageLabel.textContent = 'Faces';
+    } else if (currentPath.includes('dashboard')) {
+        document.getElementById('nav-overview').classList.add('bg-gray-100');
+        if (pageLabel) pageLabel.textContent = 'Dashboard';
+    }
+});
+</script>
