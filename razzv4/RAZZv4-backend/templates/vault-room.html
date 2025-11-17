@@ -443,7 +443,7 @@
                 formData.append('url', rtspUrl);
                 formData.append('sdp64', sdp64);
                 
-                const response = await fetch('https://aqlinks.com/rtsp/stream', {
+                const response = await fetch('https://aqlinks.com/webrtc/stream', {
                     method: 'POST',
                     body: formData
                 });
