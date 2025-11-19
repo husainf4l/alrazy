@@ -544,13 +544,14 @@ async def initialize_ip_cameras(request: Request):
 
 
 @app.get("/api/ip-cameras/frame/{camera_name}")
-async def get_ip_camera_frame(camera_name: str, quality: int = 80):
-    """Get current frame from a specific IP camera (low-latency) with adaptive quality and caching headers"""
+async def get_ip_camera_frame(camera_name: str, quality: int = 75):
+    """Get current frame from a specific IP camera (ULTRA-LOW LATENCY - NO CACHE)"""
     try:
+        request_start = time.time()
         from app.services.ip_camera_service import get_camera_manager
         import json
         
-        # Clamp quality to valid range
+        # Clamp quality to valid range (lower default for speed)
         quality = max(70, min(90, quality))
         
         manager = get_camera_manager()
@@ -562,11 +563,10 @@ async def get_ip_camera_frame(camera_name: str, quality: int = 80):
                 status_code=404
             )
         
-        # Get ETag for cache validation
-        etag = camera.get_frame_etag()
-        
-        # Pre-encoded base64 frame with specified quality
+        # Get fresh frame (no caching)
+        frame_fetch_start = time.time()
         frame_b64 = camera.get_frame_b64(quality=quality)
+        frame_fetch_time = (time.time() - frame_fetch_start) * 1000  # ms
         
         if frame_b64 is None:
             return JSONResponse(
@@ -574,21 +574,35 @@ async def get_ip_camera_frame(camera_name: str, quality: int = 80):
                 status_code=404
             )
         
-        # Create JSON response data
+        # Calculate total request time and frame age
+        total_request_time = (time.time() - request_start) * 1000  # ms
+        frame_age = (time.time() - camera.frame_timestamp) * 1000 if camera.frame_timestamp else 0  # ms
+        
+        # Create JSON response data with debug timestamps
         response_data = {
             "camera": camera_name,
             "frame": frame_b64,
-            "etag": etag
+            "timestamp": time.time(),  # Server timestamp
+            "debug": {
+                "frame_age_ms": round(frame_age, 1),  # How old is the frame
+                "encode_time_ms": round(frame_fetch_time, 1),  # JPEG encoding time
+                "total_time_ms": round(total_request_time, 1)  # Total API latency
+            }
         }
         
-        # Return with proper cache headers
+        # Log significant delays (>200ms only - optimized)
+        if frame_age > 200:
+            logger.warning(f"{camera_name}: HIGH DELAY - Frame age={frame_age:.1f}ms (Encode={frame_fetch_time:.1f}ms)")
+        
+        # Return with NO-CACHE headers for live streaming
         return Response(
             content=json.dumps(response_data),
             media_type="application/json",
             headers={
-                "ETag": etag if etag else '""',
-                "Cache-Control": "public, max-age=0, must-revalidate",
-                "Pragma": "no-cache"
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "X-Content-Type-Options": "nosniff"
             }
         )
         
@@ -617,6 +631,48 @@ async def stop_all_cameras():
         logger.error(f"Error stopping cameras: {e}")
         return JSONResponse(
             content={"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/tracking/stats")
+async def get_tracking_statistics():
+    """Get global multi-camera tracking statistics"""
+    try:
+        from app.services.ip_camera_service import get_camera_manager
+        
+        manager = get_camera_manager()
+        stats = manager.get_global_tracking_stats()
+        
+        return JSONResponse(content=stats)
+        
+    except Exception as e:
+        logger.error(f"Error getting tracking stats: {e}")
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/tracking/people-count")
+async def get_total_people_count():
+    """Get total unique people count across all cameras"""
+    try:
+        from app.services.ip_camera_service import get_camera_manager
+        
+        manager = get_camera_manager()
+        stats = manager.get_global_tracking_stats()
+        
+        return JSONResponse(content={
+            "total_unique_people": stats.get("total_unique_people", 0),
+            "people_per_camera": stats.get("people_per_camera", {}),
+            "timestamp": time.time()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting people count: {e}")
+        return JSONResponse(
+            content={"error": str(e), "total_unique_people": 0},
             status_code=500
         )
 
@@ -769,22 +825,41 @@ async def close_all_webrtc_sessions(current_user = Depends(get_current_user)):
 
 @app.on_event("startup")
 async def startup_event():
-    """Application startup"""
+    """
+    Application startup - Initialize all services eagerly (best practice).
+    Cameras connect asynchronously in background to prevent blocking the server.
+    """
     try:
+        print("🚀 Starting application initialization...")
+        
+        # Initialize multi-camera tracking service FIRST (before cameras start streaming)
+        # This prevents API endpoints from blocking on first call
+        from app.services.ip_camera_service import init_tracking_service
+        try:
+            init_tracking_service()
+            print("✅ Multi-camera tracking service initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize tracking service: {e}")
+            print(f"⚠️  Tracking service initialization failed: {e}")
+        
         # Load camera configuration
         config_path = "config/cameras.json"
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
-            # Initialize IP camera manager
+            # Initialize IP camera manager (non-blocking)
             from app.services.ip_camera_service import get_camera_manager
             manager = get_camera_manager()
+            
+            # Add cameras with async connection (non-blocking, best practice)
             for camera_name, camera_config in config.get("streams", {}).items():
                 rtsp_url = camera_config.get("url")
                 if rtsp_url:
-                    manager.add_camera(camera_name, rtsp_url)
-            print(f"✅ IP camera manager initialized with {len(config.get('streams', {}))} cameras")
+                    # connect_async=True means cameras connect in background
+                    manager.add_camera(camera_name, rtsp_url, connect_async=True)
+            
+            print(f"✅ IP camera manager initialized with {len(config.get('streams', {}))} cameras (connecting in background)")
             
             # Initialize WebRTC manager with camera URLs
             camera_urls = {}
@@ -805,7 +880,7 @@ async def startup_event():
         logger.error(f"Failed to initialize: {e}")
         print(f"⚠️  Initialization failed: {e}")
     
-    print("🚀 Application started")
+    print("🚀 Application ready - Server is now responsive (cameras connecting in background)")
 
 
 @app.on_event("shutdown")

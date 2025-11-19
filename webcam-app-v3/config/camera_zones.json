@@ -1,0 +1,9 @@
+{
+  "_comment": "Camera Zone Configuration - Define which cameras have overlapping fields of view",
+  "_instructions": "If camera A overlaps with camera B, then B must also list A. Cameras with no overlaps use empty array []",
+  "camera2_back_yard": ["camera3_back_yard_2"],
+  "camera3_back_yard_2": ["camera2_back_yard"],
+  "camera4_front": ["camera5_front_yard"],
+  "camera5_front_yard": ["camera4_front"],
+  "camera6_entrance": []
+}
