@@ -6,6 +6,7 @@ Handles room CRUD operations and cross-camera person counting
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from uuid import UUID
 from database import SessionLocal
 from models import Room, Camera
 from schemas.room import (
@@ -56,7 +57,7 @@ def get_rooms(
     
     result = []
     for room in rooms:
-        cameras = db.query(Camera).filter(Camera.room_id == room.id).all()
+        cameras = db.query(Camera).filter(Camera.roomId == room.id).all()
         result.append({
             **room.__dict__,
             'camera_count': len(cameras),
@@ -67,7 +68,7 @@ def get_rooms(
 
 
 @router.get("/{room_id}", response_model=RoomWithCameras)
-def get_room(room_id: int, db: Session = Depends(get_db)):
+def get_room(room_id: UUID, db: Session = Depends(get_db)):
     """
     Get a specific room by ID with its cameras
     """
@@ -75,7 +76,7 @@ def get_room(room_id: int, db: Session = Depends(get_db)):
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     
-    cameras = db.query(Camera).filter(Camera.room_id == room_id).all()
+    cameras = db.query(Camera).filter(Camera.roomId == room_id).all()
     
     return {
         **room.__dict__,
@@ -86,7 +87,7 @@ def get_room(room_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{room_id}", response_model=RoomResponse)
 def update_room(
-    room_id: int, 
+    room_id: UUID, 
     room_update: RoomUpdate, 
     db: Session = Depends(get_db)
 ):
@@ -107,7 +108,7 @@ def update_room(
 
 
 @router.delete("/{room_id}")
-def delete_room(room_id: int, db: Session = Depends(get_db)):
+def delete_room(room_id: UUID, db: Session = Depends(get_db)):
     """
     Delete a room (cameras will be unassigned, not deleted)
     """
@@ -116,7 +117,7 @@ def delete_room(room_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Room not found")
     
     # Unassign cameras from this room
-    db.query(Camera).filter(Camera.room_id == room_id).update({"room_id": None})
+    db.query(Camera).filter(Camera.roomId == room_id).update({"roomId": None})
     
     db.delete(db_room)
     db.commit()
@@ -126,8 +127,8 @@ def delete_room(room_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{room_id}/cameras/{camera_id}")
 def assign_camera_to_room(
-    room_id: int, 
-    camera_id: int, 
+    room_id: UUID, 
+    camera_id: UUID, 
     db: Session = Depends(get_db)
 ):
     """
@@ -141,7 +142,7 @@ def assign_camera_to_room(
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
     
-    camera.room_id = room_id
+    camera.roomId = room_id
     db.commit()
     
     return {"message": f"Camera {camera_id} assigned to room {room_id}"}
@@ -149,8 +150,8 @@ def assign_camera_to_room(
 
 @router.delete("/{room_id}/cameras/{camera_id}")
 def remove_camera_from_room(
-    room_id: int, 
-    camera_id: int, 
+    room_id: UUID, 
+    camera_id: UUID, 
     db: Session = Depends(get_db)
 ):
     """
@@ -158,7 +159,7 @@ def remove_camera_from_room(
     """
     camera = db.query(Camera).filter(
         Camera.id == camera_id,
-        Camera.room_id == room_id
+        Camera.roomId == room_id
     ).first()
     
     if not camera:
@@ -167,14 +168,14 @@ def remove_camera_from_room(
             detail="Camera not found in this room"
         )
     
-    camera.room_id = None
+    camera.roomId = None
     db.commit()
     
     return {"message": f"Camera {camera_id} removed from room {room_id}"}
 
 
 @router.get("/{room_id}/person-count", response_model=RoomPersonCount)
-def get_room_person_count(room_id: int, db: Session = Depends(get_db)):
+def get_room_person_count(room_id: UUID, db: Session = Depends(get_db)):
     """
     Get unique person count in a room (cross-camera tracking)
     This prevents double-counting when cameras overlap
@@ -196,7 +197,7 @@ def get_room_person_count(room_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{room_id}/person/{global_id}/name")
-def set_person_name(room_id: int, global_id: int, name: str, db: Session = Depends(get_db)):
+def set_person_name(room_id: UUID, global_id: int, name: str, db: Session = Depends(get_db)):
     """
     Assign a name to a tracked person in a room
     
@@ -225,7 +226,7 @@ def set_person_name(room_id: int, global_id: int, name: str, db: Session = Depen
 
 
 @router.get("/{room_id}/person/{global_id}")
-def get_person_info(room_id: int, global_id: int, db: Session = Depends(get_db)):
+def get_person_info(room_id: UUID, global_id: int, db: Session = Depends(get_db)):
     """
     Get information about a specific tracked person
     
@@ -248,7 +249,7 @@ def get_person_info(room_id: int, global_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/{room_id}/layout", response_model=RoomLayoutResponse)
-def get_room_layout(room_id: int, db: Session = Depends(get_db)):
+def get_room_layout(room_id: UUID, db: Session = Depends(get_db)):
     """
     Get room layout with camera positions and overlap zones
     """
@@ -269,7 +270,7 @@ def get_room_layout(room_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{room_id}/layout")
 def update_room_layout(
-    room_id: int, 
+    room_id: UUID, 
     layout: RoomLayoutUpdate, 
     db: Session = Depends(get_db)
 ):

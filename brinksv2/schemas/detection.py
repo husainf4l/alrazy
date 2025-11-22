@@ -1,17 +1,18 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 
 class DetectionCountCreate(BaseModel):
-    camera_id: int
+    camera_id: UUID
     people_count: int
     average_count: Optional[float] = None
 
 
 class DetectionCountResponse(BaseModel):
     id: int
-    camera_id: int
+    camera_id: UUID
     people_count: int
     average_count: Optional[float] = None
     timestamp: datetime
@@ -21,7 +22,7 @@ class DetectionCountResponse(BaseModel):
 
 
 class LiveDetectionStats(BaseModel):
-    camera_id: int
+    camera_id: UUID
     camera_name: str
     current_count: int
     average_count: float

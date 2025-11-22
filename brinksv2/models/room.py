@@ -1,7 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
+import uuid
 
 
 class Room(Base):
@@ -11,28 +13,30 @@ class Room(Base):
     """
     __tablename__ = "rooms"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True)
-    description = Column(Text, nullable=True)
-    floor_level = Column(String, nullable=True)  # e.g., "Ground Floor", "1st Floor"
-    capacity = Column(Integer, nullable=True)  # Maximum room capacity
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    rtspLink = Column('rtspLink', String, nullable=True)
+    location = Column(String, nullable=True)
+    isActive = Column('isActive', Boolean, default=True)
+    businessId = Column('businessId', UUID(as_uuid=True), nullable=True)
     
-    # Visual layout configuration
-    dimensions = Column(JSON, nullable=True)  # Room dimensions: {width, height, length} in meters
-    floor_plan_image = Column(Text, nullable=True)  # Base64 encoded floor plan image
-    layout_scale = Column(Integer, default=100)  # Scale: pixels per meter
+    createdAt = Column('createdAt', DateTime, default=datetime.utcnow)
+    updatedAt = Column('updatedAt', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Camera positioning in room
-    camera_positions = Column(JSON, nullable=True)  # Array of camera positions with FOV
+    # Python properties for backward compatibility
+    @property
+    def created_at(self):
+        return self.createdAt
     
-    # Metadata for cross-camera tracking configuration
-    overlap_config = Column(JSON, nullable=True)  # Store overlap zones between cameras
+    @property
+    def updated_at(self):
+        return self.updatedAt
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationship to cameras
-    cameras = relationship("Camera", back_populates="room")
+    @property
+    def overlap_config(self):
+        """Return empty overlap config for backward compatibility"""
+        return None
     
     def __repr__(self):
-        return f"<Room(id={self.id}, name='{self.name}', cameras={len(self.cameras)})>"
+        return f"<Room(id={self.id}, name='{self.name}')>"

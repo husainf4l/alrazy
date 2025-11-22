@@ -29,9 +29,19 @@ APP_PORT = int(os.getenv("APP_PORT", "8001"))
 APP_DEBUG = os.getenv("APP_DEBUG", "False").lower() == "true"
 
 # ==================== YOLO Model Configuration ====================
-YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", str(BASE_DIR / "yolo11m.pt"))
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", str(BASE_DIR / "yolo11m.onnx"))
 YOLO_CONFIDENCE_THRESHOLD = float(os.getenv("YOLO_CONFIDENCE_THRESHOLD", "0.5"))
 YOLO_DEVICE = os.getenv("YOLO_DEVICE", "cuda")  # cuda or cpu
+
+# ==================== Face Detection Configuration ====================
+FACE_DETECTION_METHOD = os.getenv("FACE_DETECTION_METHOD", "hybrid")  # Options: hybrid, yunet, yolo
+FACE_DETECTION_ENABLED = os.getenv("FACE_DETECTION_ENABLED", "True").lower() == "true"
+FACE_CONFIDENCE_THRESHOLD = float(os.getenv("FACE_CONFIDENCE_THRESHOLD", "0.6"))
+
+# YuNet Face Detection Parameters
+YUNET_SCORE_THRESHOLD = float(os.getenv("YUNET_SCORE_THRESHOLD", "0.6"))
+YUNET_NMS_THRESHOLD = float(os.getenv("YUNET_NMS_THRESHOLD", "0.3"))
+YUNET_TOP_K = int(os.getenv("YUNET_TOP_K", "5000"))
 
 # ==================== ByteTrack Configuration ====================
 BYTETRACK_THRESHOLD = float(os.getenv("BYTETRACK_THRESHOLD", "0.6"))
@@ -96,6 +106,14 @@ class Config:
     YOLO_MODEL_PATH = YOLO_MODEL_PATH
     YOLO_CONFIDENCE_THRESHOLD = YOLO_CONFIDENCE_THRESHOLD
     YOLO_DEVICE = YOLO_DEVICE
+    
+    # Face Detection
+    FACE_DETECTION_METHOD = FACE_DETECTION_METHOD
+    FACE_DETECTION_ENABLED = FACE_DETECTION_ENABLED
+    FACE_CONFIDENCE_THRESHOLD = FACE_CONFIDENCE_THRESHOLD
+    YUNET_SCORE_THRESHOLD = YUNET_SCORE_THRESHOLD
+    YUNET_NMS_THRESHOLD = YUNET_NMS_THRESHOLD
+    YUNET_TOP_K = YUNET_TOP_K
     
     # ByteTrack
     BYTETRACK_THRESHOLD = BYTETRACK_THRESHOLD

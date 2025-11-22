@@ -37,6 +37,16 @@ class GlobalPerson:
     total_appearances: int = 0
     cameras_visited: set = field(default_factory=set)
     
+    # Physical dimensions (averaged across all sightings)
+    avg_height: float = 0.0
+    avg_width: float = 0.0
+    dimension_samples: List[Tuple[float, float]] = field(default_factory=list)  # [(height, width), ...]
+    
+    # Appearance features (color-based)
+    clothing_color_hist: Optional[np.ndarray] = None  # HSV color histogram of clothing (torso area)
+    skin_tone_avg: Optional[np.ndarray] = None  # Average skin tone (face/arms area) in HSV
+    color_samples: int = 0  # Number of samples used for color averaging
+    
     # Quality metrics (quality now based on bbox size)
     best_face_quality: float = 0.0
     best_face_embedding: Optional[np.ndarray] = None
@@ -44,7 +54,8 @@ class GlobalPerson:
     def update_from_camera(self, camera_id: int, local_track_id: int, 
                           face_embedding: Optional[np.ndarray] = None,
                           face_quality: float = 0.0,
-                          bbox: Optional[Tuple[int, int, int, int]] = None):
+                          bbox: Optional[Tuple[int, int, int, int]] = None,
+                          frame: Optional[np.ndarray] = None):
         """Update person state from camera detection"""
         self.camera_tracks[camera_id] = local_track_id
         self.last_seen = time.time()
@@ -54,6 +65,25 @@ class GlobalPerson:
         # Store position from this camera
         if bbox is not None:
             self.camera_positions[camera_id] = bbox
+            
+            # Update dimensions (rolling average with max 100 samples)
+            x1, y1, x2, y2 = bbox
+            height = y2 - y1
+            width = x2 - x1
+            
+            self.dimension_samples.append((height, width))
+            if len(self.dimension_samples) > 100:
+                self.dimension_samples.pop(0)
+            
+            # Recalculate average dimensions
+            if self.dimension_samples:
+                self.avg_height = sum(h for h, w in self.dimension_samples) / len(self.dimension_samples)
+                self.avg_width = sum(w for h, w in self.dimension_samples) / len(self.dimension_samples)
+            
+            # Update color features (clothing & skin tone) if frame is provided
+            # Only extract color on first detection or periodically (every 10th sample)
+            if frame is not None and (self.color_samples == 0 or self.color_samples % 10 == 0):
+                self._update_color_features(frame, bbox)
         
         # Update face embedding if quality is better
         if face_embedding is not None and face_quality > self.best_face_quality:
@@ -63,6 +93,77 @@ class GlobalPerson:
             # Update primary embedding if significantly better
             if self.face_embedding is None or face_quality > self.best_face_quality * 0.8:
                 self.face_embedding = face_embedding.copy()
+    
+    def _update_color_features(self, frame: np.ndarray, bbox: Tuple[int, int, int, int]):
+        """
+        Extract and update clothing color and skin tone features
+        Uses HSV color space for robustness to lighting changes
+        """
+        try:
+            import cv2
+            
+            x1, y1, x2, y2 = bbox
+            h, w = frame.shape[:2]
+            
+            # Ensure bbox is within frame
+            x1, y1 = max(0, int(x1)), max(0, int(y1))
+            x2, y2 = min(w, int(x2)), min(h, int(y2))
+            
+            if x2 <= x1 or y2 <= y1:
+                return
+            
+            person_crop = frame[y1:y2, x1:x2]
+            crop_h, crop_w = person_crop.shape[:2]
+            
+            if crop_h < 20 or crop_w < 10:  # Too small
+                return
+            
+            # Convert to HSV for better color representation
+            hsv_crop = cv2.cvtColor(person_crop, cv2.COLOR_BGR2HSV)
+            
+            # Extract TORSO region (middle 40-70% height, full width) for clothing color
+            torso_y1 = int(crop_h * 0.4)
+            torso_y2 = int(crop_h * 0.7)
+            torso_region = hsv_crop[torso_y1:torso_y2, :]
+            
+            # Compute color histogram for clothing (16 bins per channel)
+            hist_h = cv2.calcHist([torso_region], [0], None, [16], [0, 180])
+            hist_s = cv2.calcHist([torso_region], [1], None, [16], [0, 256])
+            hist_v = cv2.calcHist([torso_region], [2], None, [16], [0, 256])
+            
+            # Normalize histograms
+            hist_h = cv2.normalize(hist_h, hist_h).flatten()
+            hist_s = cv2.normalize(hist_s, hist_s).flatten()
+            hist_v = cv2.normalize(hist_v, hist_v).flatten()
+            
+            # Concatenate into single feature vector (48 dimensions)
+            color_hist = np.concatenate([hist_h, hist_s, hist_v])
+            
+            # Update clothing color with exponential moving average
+            if self.clothing_color_hist is None:
+                self.clothing_color_hist = color_hist
+            else:
+                alpha = 0.3  # Weight for new sample
+                self.clothing_color_hist = (1 - alpha) * self.clothing_color_hist + alpha * color_hist
+            
+            # Extract HEAD/NECK region (top 25% height) for skin tone
+            skin_y2 = int(crop_h * 0.25)
+            skin_region = hsv_crop[:skin_y2, :]
+            
+            # Average HSV values for skin tone (simple approach)
+            skin_mean = np.mean(skin_region, axis=(0, 1))
+            
+            # Update skin tone with exponential moving average
+            if self.skin_tone_avg is None:
+                self.skin_tone_avg = skin_mean
+            else:
+                alpha = 0.3
+                self.skin_tone_avg = (1 - alpha) * self.skin_tone_avg + alpha * skin_mean
+            
+            self.color_samples += 1
+            
+        except Exception as e:
+            logger.debug(f"Error extracting color features: {e}")
     
     def remove_camera_track(self, camera_id: int):
         """Remove tracking from a specific camera"""
@@ -81,6 +182,7 @@ class GlobalPersonTracker:
     Manages global person identities across multiple cameras
     WITH DATABASE PERSISTENCE - All cameras share person data
     WITH FAISS INDEX - Fast similarity search for large person galleries
+    WITH PRIMARY CAMERA SYSTEM - Camera 10 is the main ID source
     
     Features:
     - OSNet Re-ID for full-body matching across cameras
@@ -89,13 +191,18 @@ class GlobalPersonTracker:
     - Database persistence for cross-camera sharing
     - Physical dimensions tracking
     - Automatic sync to database
+    - Primary camera (Camera 10) assigns IDs and extracts features
+    - Support cameras match against primary camera persons
     """
+    
+    PRIMARY_CAMERA_ID = 10  # Main camera that assigns IDs
     
     def __init__(self, 
                  face_similarity_threshold: float = 0.5,
                  person_timeout: float = 30.0,
                  cleanup_interval: float = 60.0,
-                 db_sync_interval: float = 5.0):
+                 db_sync_interval: float = 5.0,
+                 primary_camera_id: int = 10):
         """
         Initialize global person tracker
         
@@ -104,11 +211,13 @@ class GlobalPersonTracker:
             person_timeout: Seconds before removing inactive person
             cleanup_interval: Seconds between cleanup runs
             db_sync_interval: Seconds between database syncs
+            primary_camera_id: ID of the primary camera (default: 10)
         """
         self.face_similarity_threshold = face_similarity_threshold
         self.person_timeout = person_timeout
         self.cleanup_interval = cleanup_interval
         self.db_sync_interval = db_sync_interval
+        self.PRIMARY_CAMERA_ID = primary_camera_id
         
         # Global person registry (in-memory cache)
         self.persons: Dict[int, GlobalPerson] = {}  # {global_id: GlobalPerson}
@@ -136,6 +245,8 @@ class GlobalPersonTracker:
         self.sync_thread.start()
         
         logger.info(f"✅ Global person tracker initialized with database persistence")
+        logger.info(f"   Primary camera: {self.PRIMARY_CAMERA_ID} (assigns IDs)")
+        logger.info(f"   Support cameras: All others (match against primary)")
         logger.info(f"   Face threshold: {face_similarity_threshold}, Timeout: {person_timeout}s")
         logger.info(f"   Loaded {len(self.persons)} persons from database")
     
@@ -144,23 +255,34 @@ class GlobalPersonTracker:
                                local_track_id: int,
                                face_embedding: Optional[np.ndarray] = None,
                                face_quality: float = 0.0,
-                               bbox: Optional[Tuple[int, int, int, int]] = None) -> int:
+                               bbox: Optional[Tuple[int, int, int, int]] = None,
+                               frame: Optional[np.ndarray] = None) -> int:
         """
         Match person to existing global ID or create new one
-        Uses SPATIAL FIRST (immediate), then Re-ID (after 3+ frames)
         
-        Matching Priority:
-        1. Check if track already mapped (return existing ID)
-        2. Try spatial matching FIRST (works from frame 1, even without embedding)
-        3. Try Re-ID matching (requires embedding, more accurate)
-        4. Create new person
+        PRIMARY CAMERA (Camera 10): Assigns IDs and extracts features
+        SUPPORT CAMERAS (Others): Match against primary camera persons
+        
+        Primary Camera Logic:
+        1. Check if track already mapped
+        2. Always create new person (primary camera is source of truth)
+        
+        Support Camera Logic:
+        1. Check if track already mapped
+        2. Try matching against PRIMARY CAMERA persons:
+           - Spatial matching (overlapping views)
+           - Dimension matching (physical size)
+           - Color matching (clothing + skin)
+           - Re-ID matching (OSNet embeddings)
+        3. Only create new if no primary camera person matches
         
         Args:
             camera_id: Source camera ID
             local_track_id: Local tracking ID from this camera
-            face_embedding: 512-dim Re-ID embedding (if available after 3+ frames)
+            face_embedding: 512-dim Re-ID embedding (if available)
             face_quality: Embedding quality score
-            bbox: Person bounding box (for spatial reasoning)
+            bbox: Person bounding box (for spatial + dimension matching)
+            frame: Full camera frame (for color feature extraction)
         
         Returns:
             global_id: Unique person ID across all cameras
@@ -188,37 +310,133 @@ class GlobalPersonTracker:
                             faiss.add_embedding(global_id, face_embedding)
                             logger.debug(f"📊 Added embedding to FAISS for Global ID {global_id}")
                     
-                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
                     return global_id
             
-            # PRIORITY 1: Try SPATIAL matching FIRST (works from frame 1, instant cross-camera matching)
+            # ========================================================================
+            # PRIMARY CAMERA: Check existing persons first, then create if needed
+            # ========================================================================
+            if camera_id == self.PRIMARY_CAMERA_ID:
+                # Try to match against existing persons from primary camera
+                # (person might have left and returned with new local track ID)
+                primary_persons = {
+                    gid: person for gid, person in self.persons.items()
+                    if self.PRIMARY_CAMERA_ID in person.cameras_visited
+                }
+                
+                if primary_persons:
+                    # Try matching by Re-ID (most reliable)
+                    if face_embedding is not None:
+                        face_match = self._find_best_face_match_from_primary(face_embedding, camera_id, primary_persons)
+                        if face_match:
+                            global_id = face_match
+                            person = self.persons[global_id]
+                            person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                            self.camera_track_to_global[key] = global_id
+                            logger.info(f"🔄 PRIMARY Camera {camera_id}: Re-identified returning person → Global ID {global_id} (track {local_track_id})")
+                            return global_id
+                    
+                    # Try matching by dimensions
+                    if bbox is not None:
+                        dimension_match = self._find_best_dimension_match_from_primary(bbox, camera_id, primary_persons)
+                        if dimension_match:
+                            global_id = dimension_match
+                            person = self.persons[global_id]
+                            person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                            self.camera_track_to_global[key] = global_id
+                            logger.info(f"🔄 PRIMARY Camera {camera_id}: Re-identified returning person by dimensions → Global ID {global_id} (track {local_track_id})")
+                            return global_id
+                    
+                    # Try matching by color
+                    if frame is not None and bbox is not None:
+                        color_match = self._find_best_color_match_from_primary(frame, bbox, camera_id, primary_persons)
+                        if color_match:
+                            global_id = color_match
+                            person = self.persons[global_id]
+                            person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                            self.camera_track_to_global[key] = global_id
+                            logger.info(f"🔄 PRIMARY Camera {camera_id}: Re-identified returning person by color → Global ID {global_id} (track {local_track_id})")
+                            return global_id
+                
+                # No match found - create new person
+                global_id = self._create_new_person(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                logger.info(f"🎯 PRIMARY Camera {camera_id}: New person Global ID {global_id} (track {local_track_id})")
+                return global_id
+            
+            # ========================================================================
+            # SUPPORT CAMERAS: Match against PRIMARY CAMERA persons
+            # ========================================================================
+            logger.debug(f"📡 Support Camera {camera_id}: Searching for match against primary camera persons...")
+            
+            # Only match against persons that were seen on the PRIMARY CAMERA
+            primary_persons = {
+                gid: person for gid, person in self.persons.items()
+                if self.PRIMARY_CAMERA_ID in person.cameras_visited
+            }
+            
+            logger.debug(f"📊 Support Camera {camera_id}: Found {len(primary_persons)} persons from primary camera (out of {len(self.persons)} total)")
+            
+            if not primary_persons:
+                logger.warning(f"⚠️  Support Camera {camera_id}: No persons from primary camera yet!")
+                # Don't create new person on support camera - wait for primary
+                return None
+            
+            # PRIORITY 1: Try SPATIAL matching (overlapping views with primary camera)
             if bbox is not None:
-                spatial_match = self._find_best_spatial_match(bbox, camera_id)
+                spatial_match = self._find_best_spatial_match_from_primary(bbox, camera_id, primary_persons)
                 
                 if spatial_match:
                     global_id = spatial_match
                     person = self.persons[global_id]
-                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
                     self.camera_track_to_global[key] = global_id
                     
-                    logger.info(f"✅ Spatial match: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
+                    logger.info(f"✅ Support Camera {camera_id}: Spatial match → Global ID {global_id} (track {local_track_id})")
                     return global_id
             
-            # PRIORITY 2: Try Re-ID matching (more accurate, requires 3+ frames for embedding)
+            # PRIORITY 2: Try DIMENSION matching (physical size from primary camera)
+            if bbox is not None:
+                dimension_match = self._find_best_dimension_match_from_primary(bbox, camera_id, primary_persons)
+                
+                if dimension_match:
+                    global_id = dimension_match
+                    person = self.persons[global_id]
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                    self.camera_track_to_global[key] = global_id
+                    
+                    logger.info(f"✅ Support Camera {camera_id}: Dimension match → Global ID {global_id} (track {local_track_id})")
+                    return global_id
+            
+            # PRIORITY 3: Try COLOR matching (clothing + skin from primary camera)
+            if bbox is not None and frame is not None:
+                color_match = self._find_best_color_match_from_primary(frame, bbox, camera_id, primary_persons)
+                
+                if color_match:
+                    global_id = color_match
+                    person = self.persons[global_id]
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
+                    self.camera_track_to_global[key] = global_id
+                    
+                    logger.info(f"✅ Support Camera {camera_id}: Color match → Global ID {global_id} (track {local_track_id})")
+                    return global_id
+            
+            # PRIORITY 4: Try Re-ID matching (OSNet embeddings from primary camera)
             if face_embedding is not None:
-                face_match = self._find_best_face_match(face_embedding, camera_id)
+                face_match = self._find_best_face_match_from_primary(face_embedding, camera_id, primary_persons)
                 
                 if face_match:
                     global_id = face_match
                     person = self.persons[global_id]
-                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
+                    person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
                     self.camera_track_to_global[key] = global_id
                     
-                    logger.info(f"✅ Re-ID match: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
+                    logger.info(f"✅ Support Camera {camera_id}: Re-ID match → Global ID {global_id} (track {local_track_id})")
                     return global_id
             
-            # No match found - create new person
-            global_id = self._create_new_person(camera_id, local_track_id, face_embedding, face_quality, bbox)
+            # No match found on support camera - DON'T create new person
+            # Only primary camera creates persons
+            logger.warning(f"⚠️  Support Camera {camera_id}: No match found for track {local_track_id} (waiting for primary camera)")
+            return None
             logger.info(f"🆕 New person: Global ID {global_id} on camera {camera_id} (track {local_track_id})")
             return global_id
     
@@ -352,12 +570,13 @@ class GlobalPersonTracker:
             if not person.is_active(self.person_timeout):
                 continue
             
-            # Don't match with same camera (already handled by ByteTrack)
-            if camera_id in person.camera_tracks:
-                continue
-            
             # Check if person is currently visible on ANY other camera
             if not person.camera_positions:
+                continue
+            
+            # BEST PRACTICE: Skip if person is already tracked on THIS camera
+            # (ByteTrack should handle same-camera tracking)
+            if camera_id in person.camera_positions:
                 continue
             
             # Extended time window for spatial matching (3 seconds instead of 2)
@@ -380,6 +599,367 @@ class GlobalPersonTracker:
         
         if best_match_id:
             logger.debug(f"Spatial match: Global ID {best_match_id} (IoU={best_iou:.3f})")
+        
+        return best_match_id
+    
+    def _find_best_dimension_match(self, bbox: Tuple[int, int, int, int], camera_id: int) -> Optional[int]:
+        """
+        Find best matching person by physical dimensions (height/width similarity)
+        
+        When person appears after being out of view, physical dimensions help re-identify them.
+        Useful when embeddings haven't been extracted yet or spatial overlap isn't available.
+        
+        Args:
+            bbox: Person bounding box [x1, y1, x2, y2]
+            camera_id: Source camera ID
+        
+        Returns:
+            global_id of best match, or None
+        """
+        x1, y1, x2, y2 = bbox
+        query_height = y2 - y1
+        query_width = x2 - x1
+        
+        best_match_id = None
+        best_similarity = 0.80  # 80% similarity threshold (tolerant to camera angle differences)
+        
+        for global_id, person in self.persons.items():
+            # Skip persons without dimension history
+            if person.avg_height == 0 or person.avg_width == 0:
+                continue
+            
+            # BEST PRACTICE: Only skip if person is CURRENTLY ACTIVE on this camera
+            # Don't block historical matches - person may have left and returned
+            if camera_id in person.camera_positions:
+                continue
+            
+            # Calculate dimension similarity (1 - normalized difference)
+            height_diff = abs(query_height - person.avg_height) / max(query_height, person.avg_height)
+            width_diff = abs(query_width - person.avg_width) / max(query_width, person.avg_width)
+            
+            # Combined similarity (average of height and width similarity)
+            height_similarity = 1.0 - height_diff
+            width_similarity = 1.0 - width_diff
+            combined_similarity = (height_similarity + width_similarity) / 2.0
+            
+            if combined_similarity > best_similarity:
+                best_similarity = combined_similarity
+                best_match_id = global_id
+        
+        if best_match_id:
+            person = self.persons[best_match_id]
+            logger.debug(f"Dimension match: Global ID {best_match_id} (similarity={best_similarity:.2f}, "
+                        f"query={query_height:.0f}x{query_width:.0f}px, "
+                        f"stored={person.avg_height:.0f}x{person.avg_width:.0f}px)")
+        
+        return best_match_id
+    
+    def _find_best_color_match(self, frame: np.ndarray, bbox: Tuple[int, int, int, int], camera_id: int) -> Optional[int]:
+        """
+        Find best matching person by appearance (clothing color + skin tone)
+        
+        Extracts color features from the query detection and compares against
+        stored color histograms. Useful when Re-ID embeddings aren't available yet.
+        
+        Args:
+            frame: Full camera frame
+            bbox: Person bounding box [x1, y1, x2, y2]
+            camera_id: Source camera ID
+        
+        Returns:
+            global_id of best match, or None
+        """
+        try:
+            import cv2
+            
+            x1, y1, x2, y2 = bbox
+            h, w = frame.shape[:2]
+            
+            # Ensure bbox is within frame
+            x1, y1 = max(0, int(x1)), max(0, int(y1))
+            x2, y2 = min(w, int(x2)), min(h, int(y2))
+            
+            if x2 <= x1 or y2 <= y1:
+                return None
+            
+            person_crop = frame[y1:y2, x1:x2]
+            crop_h, crop_w = person_crop.shape[:2]
+            
+            if crop_h < 20 or crop_w < 10:
+                return None
+            
+            # Convert to HSV
+            hsv_crop = cv2.cvtColor(person_crop, cv2.COLOR_BGR2HSV)
+            
+            # Extract torso for clothing color
+            torso_y1 = int(crop_h * 0.4)
+            torso_y2 = int(crop_h * 0.7)
+            torso_region = hsv_crop[torso_y1:torso_y2, :]
+            
+            # Compute color histogram
+            hist_h = cv2.calcHist([torso_region], [0], None, [16], [0, 180])
+            hist_s = cv2.calcHist([torso_region], [1], None, [16], [0, 256])
+            hist_v = cv2.calcHist([torso_region], [2], None, [16], [0, 256])
+            
+            hist_h = cv2.normalize(hist_h, hist_h).flatten()
+            hist_s = cv2.normalize(hist_s, hist_s).flatten()
+            hist_v = cv2.normalize(hist_v, hist_v).flatten()
+            
+            query_color_hist = np.concatenate([hist_h, hist_s, hist_v])
+            
+            # Extract head/neck for skin tone
+            skin_y2 = int(crop_h * 0.25)
+            skin_region = hsv_crop[:skin_y2, :]
+            query_skin_tone = np.mean(skin_region, axis=(0, 1))
+            
+            # Find best match
+            best_match_id = None
+            best_similarity = 0.70  # 70% threshold for color matching
+            
+            for global_id, person in self.persons.items():
+                # Skip persons without color features
+                if person.clothing_color_hist is None or person.skin_tone_avg is None:
+                    continue
+                
+                # Skip if currently active on this camera
+                if camera_id in person.camera_positions:
+                    continue
+                
+                # Only match active persons
+                if not person.is_active(self.person_timeout):
+                    continue
+                
+                # Compare clothing color (histogram correlation)
+                color_similarity = cv2.compareHist(
+                    query_color_hist.reshape(-1, 1).astype(np.float32),
+                    person.clothing_color_hist.reshape(-1, 1).astype(np.float32),
+                    cv2.HISTCMP_CORREL  # Returns 1 for perfect match, -1 for opposite
+                )
+                color_similarity = (color_similarity + 1) / 2  # Normalize to [0, 1]
+                
+                # Compare skin tone (Euclidean distance in HSV)
+                skin_diff = np.linalg.norm(query_skin_tone - person.skin_tone_avg)
+                skin_similarity = 1.0 / (1.0 + skin_diff / 50.0)  # Normalize with decay
+                
+                # Combined similarity (60% clothing, 40% skin tone)
+                combined_similarity = 0.6 * color_similarity + 0.4 * skin_similarity
+                
+                if combined_similarity > best_similarity:
+                    best_similarity = combined_similarity
+                    best_match_id = global_id
+            
+            if best_match_id:
+                logger.debug(f"Color match: Global ID {best_match_id} (similarity={best_similarity:.2f})")
+            
+            return best_match_id
+            
+        except Exception as e:
+            logger.debug(f"Error in color matching: {e}")
+            return None
+    
+    # ========================================================================
+    # PRIMARY CAMERA MATCHING METHODS (for support cameras)
+    # ========================================================================
+    
+    def _find_best_spatial_match_from_primary(self, bbox: Tuple[int, int, int, int], 
+                                              camera_id: int,
+                                              primary_persons: Dict[int, GlobalPerson]) -> Optional[int]:
+        """
+        Find spatial match from primary camera persons only
+        Support cameras match against persons currently visible on primary camera
+        """
+        best_match_id = None
+        best_iou = 0.25
+        current_time = time.time()
+        
+        for global_id, person in primary_persons.items():
+            if not person.is_active(self.person_timeout):
+                continue
+            
+            if camera_id in person.camera_positions:
+                continue
+            
+            if not person.camera_positions:
+                continue
+            
+            time_since_seen = current_time - person.last_seen
+            if time_since_seen > 3.0:
+                continue
+            
+            for other_camera_id, other_bbox in person.camera_positions.items():
+                if other_camera_id == camera_id:
+                    continue
+                
+                iou = self._calculate_iou(bbox, other_bbox)
+                
+                if iou > best_iou:
+                    best_iou = iou
+                    best_match_id = global_id
+        
+        if best_match_id:
+            logger.debug(f"Primary spatial match: Global ID {best_match_id} (IoU={best_iou:.3f})")
+        
+        return best_match_id
+    
+    def _find_best_dimension_match_from_primary(self, bbox: Tuple[int, int, int, int],
+                                                camera_id: int,
+                                                primary_persons: Dict[int, GlobalPerson]) -> Optional[int]:
+        """
+        Find dimension match from primary camera persons only
+        """
+        x1, y1, x2, y2 = bbox
+        query_height = y2 - y1
+        query_width = x2 - x1
+        
+        best_match_id = None
+        best_similarity = 0.80
+        
+        for global_id, person in primary_persons.items():
+            if person.avg_height == 0 or person.avg_width == 0:
+                continue
+            
+            if camera_id in person.camera_positions:
+                continue
+            
+            height_diff = abs(query_height - person.avg_height) / max(query_height, person.avg_height)
+            width_diff = abs(query_width - person.avg_width) / max(query_width, person.avg_width)
+            
+            height_similarity = 1.0 - height_diff
+            width_similarity = 1.0 - width_diff
+            combined_similarity = (height_similarity + width_similarity) / 2.0
+            
+            if combined_similarity > best_similarity:
+                best_similarity = combined_similarity
+                best_match_id = global_id
+        
+        if best_match_id:
+            person = primary_persons[best_match_id]
+            logger.debug(f"Primary dimension match: Global ID {best_match_id} (similarity={best_similarity:.2f})")
+        
+        return best_match_id
+    
+    def _find_best_color_match_from_primary(self, frame: np.ndarray, bbox: Tuple[int, int, int, int],
+                                           camera_id: int,
+                                           primary_persons: Dict[int, GlobalPerson]) -> Optional[int]:
+        """
+        Find color match from primary camera persons only
+        """
+        try:
+            import cv2
+            
+            x1, y1, x2, y2 = bbox
+            h, w = frame.shape[:2]
+            
+            x1, y1 = max(0, int(x1)), max(0, int(y1))
+            x2, y2 = min(w, int(x2)), min(h, int(y2))
+            
+            if x2 <= x1 or y2 <= y1:
+                return None
+            
+            person_crop = frame[y1:y2, x1:x2]
+            crop_h, crop_w = person_crop.shape[:2]
+            
+            if crop_h < 20 or crop_w < 10:
+                return None
+            
+            hsv_crop = cv2.cvtColor(person_crop, cv2.COLOR_BGR2HSV)
+            
+            torso_y1 = int(crop_h * 0.4)
+            torso_y2 = int(crop_h * 0.7)
+            torso_region = hsv_crop[torso_y1:torso_y2, :]
+            
+            hist_h = cv2.calcHist([torso_region], [0], None, [16], [0, 180])
+            hist_s = cv2.calcHist([torso_region], [1], None, [16], [0, 256])
+            hist_v = cv2.calcHist([torso_region], [2], None, [16], [0, 256])
+            
+            hist_h = cv2.normalize(hist_h, hist_h).flatten()
+            hist_s = cv2.normalize(hist_s, hist_s).flatten()
+            hist_v = cv2.normalize(hist_v, hist_v).flatten()
+            
+            query_color_hist = np.concatenate([hist_h, hist_s, hist_v])
+            
+            skin_y2 = int(crop_h * 0.25)
+            skin_region = hsv_crop[:skin_y2, :]
+            query_skin_tone = np.mean(skin_region, axis=(0, 1))
+            
+            best_match_id = None
+            best_similarity = 0.70
+            
+            for global_id, person in primary_persons.items():
+                if person.clothing_color_hist is None or person.skin_tone_avg is None:
+                    continue
+                
+                if camera_id in person.camera_positions:
+                    continue
+                
+                if not person.is_active(self.person_timeout):
+                    continue
+                
+                color_similarity = cv2.compareHist(
+                    query_color_hist.reshape(-1, 1).astype(np.float32),
+                    person.clothing_color_hist.reshape(-1, 1).astype(np.float32),
+                    cv2.HISTCMP_CORREL
+                )
+                color_similarity = (color_similarity + 1) / 2
+                
+                skin_diff = np.linalg.norm(query_skin_tone - person.skin_tone_avg)
+                skin_similarity = 1.0 / (1.0 + skin_diff / 50.0)
+                
+                combined_similarity = 0.6 * color_similarity + 0.4 * skin_similarity
+                
+                if combined_similarity > best_similarity:
+                    best_similarity = combined_similarity
+                    best_match_id = global_id
+            
+            if best_match_id:
+                logger.debug(f"Primary color match: Global ID {best_match_id} (similarity={best_similarity:.2f})")
+            
+            return best_match_id
+            
+        except Exception as e:
+            logger.debug(f"Error in primary color matching: {e}")
+            return None
+    
+    def _find_best_face_match_from_primary(self, query_embedding: np.ndarray,
+                                          camera_id: int,
+                                          primary_persons: Dict[int, GlobalPerson]) -> Optional[int]:
+        """
+        Find Re-ID match from primary camera persons only
+        """
+        best_match_id = None
+        best_similarity = self.face_similarity_threshold
+        
+        embeddings_dict = {}
+        for global_id, person in primary_persons.items():
+            if not person.is_active(self.person_timeout):
+                continue
+            if person.face_embedding is not None:
+                embeddings_dict[global_id] = person.face_embedding
+        
+        matches = self.faiss_service.search_with_fallback(
+            query_embedding=query_embedding,
+            embeddings_dict=embeddings_dict,
+            k=5,
+            threshold=self.face_similarity_threshold
+        )
+        
+        if matches:
+            for global_id, similarity in matches:
+                person = primary_persons.get(global_id)
+                if person is None:
+                    continue
+                
+                if camera_id in person.cameras_visited:
+                    time_since_seen = time.time() - person.last_seen
+                    if time_since_seen < 5.0:
+                        similarity *= 1.1
+                
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match_id = global_id
+        
+        if best_match_id:
+            logger.debug(f"Primary Re-ID match: Global ID {best_match_id} (similarity={best_similarity:.3f})")
         
         return best_match_id
     
@@ -423,7 +1003,8 @@ class GlobalPersonTracker:
                           local_track_id: int,
                           face_embedding: Optional[np.ndarray],
                           face_quality: float,
-                          bbox: Optional[Tuple[int, int, int, int]] = None) -> int:
+                          bbox: Optional[Tuple[int, int, int, int]] = None,
+                          frame: Optional[np.ndarray] = None) -> int:
         """Create a new global person entry"""
         global_id = self.next_global_id
         self.next_global_id += 1
@@ -435,7 +1016,7 @@ class GlobalPersonTracker:
             best_face_embedding=face_embedding.copy() if face_embedding is not None else None
         )
         
-        person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox)
+        person.update_from_camera(camera_id, local_track_id, face_embedding, face_quality, bbox, frame)
         
         self.persons[global_id] = person
         self.camera_track_to_global[(camera_id, local_track_id)] = global_id
@@ -571,6 +1152,13 @@ class GlobalPersonTracker:
                     person.last_seen = dp.last_seen.timestamp()
                     person.total_appearances = dp.total_appearances
                     person.cameras_visited = set(dp.cameras_visited or [])
+                    
+                    # Restore physical dimensions from database
+                    if dp.avg_height_pixels and dp.avg_width_pixels:
+                        person.avg_height = dp.avg_height_pixels
+                        person.avg_width = dp.avg_width_pixels
+                        # Initialize with one sample so system knows dimensions are available
+                        person.dimension_samples = [(dp.avg_height_pixels, dp.avg_width_pixels)]
                     
                     self.persons[dp.global_id] = person
                     

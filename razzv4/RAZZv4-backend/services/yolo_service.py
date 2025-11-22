@@ -3,8 +3,7 @@ YOLO11 Service for person detection and counting
 Uses Ultralytics YOLO11 model for real-time person detection
 """
 
-from logging_config import get_logger
-from config import get_settings
+import logging
 from typing import List, Tuple, Optional
 import numpy as np
 from ultralytics import YOLO
@@ -12,8 +11,7 @@ import cv2
 from pathlib import Path
 import supervision as sv
 
-logger = get_logger(__name__)
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class YOLOService:
@@ -22,25 +20,22 @@ class YOLOService:
     Handles model loading, inference, and person counting
     """
     
-    def __init__(self, model_name: str = None, confidence_threshold: float = None):
+    def __init__(self, model_name: str = "yolo11n.pt", confidence_threshold: float = 0.5):
         """
         Initialize YOLO service
         
         Args:
             model_name: YOLO model to use (yolo11n.pt, yolo11s.pt, yolo11m.pt, yolo11l.pt, yolo11x.pt)
                        n=nano (fastest), s=small, m=medium, l=large, x=extra large (most accurate)
-                       If None, uses value from config
             confidence_threshold: Minimum confidence score for detections (0.0-1.0)
-                                 If None, uses value from config
         """
-        # Use config values if not provided
-        self.model_name = model_name or settings.YOLO_MODEL
-        self.confidence_threshold = confidence_threshold or settings.YOLO_CONFIDENCE
+        self.model_name = model_name
+        self.confidence_threshold = confidence_threshold
         self.model: Optional[YOLO] = None
         self.person_class_id = 0  # In COCO dataset, person class is 0
         self.device = None
         
-        logger.info(f"Initializing YOLO service with model: {self.model_name}")
+        logger.info(f"Initializing YOLO service with model: {model_name}")
         self._detect_device()
         self._load_model()
     

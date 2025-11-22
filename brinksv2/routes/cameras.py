@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from uuid import UUID
 from database import get_db
 from models.camera import Camera
 from schemas.camera import CameraCreate, CameraUpdate, CameraResponse
@@ -13,9 +14,11 @@ async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
     """Create a new camera"""
     db_camera = Camera(
         name=camera.name,
-        rtsp_main=camera.rtsp_main,
-        rtsp_sub=camera.rtsp_sub,
-        location=camera.location
+        rtspUrl=camera.rtspUrl,
+        description=camera.description,
+        roomId=camera.roomId,
+        businessId=camera.businessId,
+        userId=camera.userId
     )
     db.add(db_camera)
     db.commit()
@@ -31,7 +34,7 @@ async def get_cameras(skip: int = 0, limit: int = 100, db: Session = Depends(get
 
 
 @router.get("/{camera_id}", response_model=CameraResponse)
-async def get_camera(camera_id: int, db: Session = Depends(get_db)):
+async def get_camera(camera_id: UUID, db: Session = Depends(get_db)):
     """Get a specific camera by ID"""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
@@ -40,7 +43,7 @@ async def get_camera(camera_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{camera_id}", response_model=CameraResponse)
-async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session = Depends(get_db)):
+async def update_camera(camera_id: UUID, camera_update: CameraUpdate, db: Session = Depends(get_db)):
     """Update a camera"""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
@@ -48,12 +51,12 @@ async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session
     
     if camera_update.name is not None:
         camera.name = camera_update.name
-    if camera_update.rtsp_main is not None:
-        camera.rtsp_main = camera_update.rtsp_main
-    if camera_update.rtsp_sub is not None:
-        camera.rtsp_sub = camera_update.rtsp_sub
-    if camera_update.location is not None:
-        camera.location = camera_update.location
+    if camera_update.rtspUrl is not None:
+        camera.rtspUrl = camera_update.rtspUrl
+    if camera_update.description is not None:
+        camera.description = camera_update.description
+    if camera_update.roomId is not None:
+        camera.roomId = camera_update.roomId
     
     db.commit()
     db.refresh(camera)
@@ -61,13 +64,13 @@ async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session
 
 
 @router.delete("/{camera_id}")
-async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
+async def delete_camera(camera_id: UUID, db: Session = Depends(get_db)):
     """Delete a camera and all its related detection records"""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
     
-    # Delete the camera (cascade will handle detection_counts)
+    # Delete the camera
     try:
         db.delete(camera)
         db.commit()

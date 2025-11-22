@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Advanced Camera Monitoring System - WebRTC Streaming">
+    <title>Advanced Test - WebRTC Camera Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .camera-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 768px) {
+            .camera-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .camera-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (min-width: 1536px) {
+            .camera-grid {
+                grid-template-columns: repeat(5, 1fr);
+            }
+        }
+
+        .camera-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .camera-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 75%;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .video-container video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-info {
+            padding: 1rem;
+        }
+
+        .camera-name {
+            font-weight: 600;
+            color: #1f2937;
+            font-size: 0.95rem;
+        }
+
+        .camera-status {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            z-index: 10;
+        }
+
+        .stats-display {
+            position: absolute;
+            bottom: 0.5rem;
+            right: 0.5rem;
+            background: rgba(0, 0, 0, 0.7);
+            color: #10b981;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .dot-connected {
+            background: #10b981;
+        }
+
+        .dot-loading {
+            background: #3b82f6;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .dot-error {
+            background: #ef4444;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* People Counter Styles */
+        .people-counter {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .people-counter::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { transform: translate(-25%, -25%); }
+            50% { transform: translate(0%, 0%); }
+        }
+
+        .counter-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .counter-number {
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .counter-label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 0.5rem;
+        }
+
+        .camera-breakdown {
+            background: white;
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            margin-top: 1rem;
+        }
+
+        .camera-breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .camera-breakdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .camera-breakdown-name {
+            color: #4b5563;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .camera-breakdown-count {
+            color: #667eea;
+            font-size: 1.125rem;
+            font-weight: 700;
+        }
+
+        .people-icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            opacity: 0.6;
+        }
+
+        .update-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse-green 2s ease-in-out infinite;
+            margin-left: 0.5rem;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            margin-top: 0.25rem;
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    {% include 'components/sidebar.html' %}
+
+    <!-- Main Content Area -->
+    <div class="lg:ml-64">
+        <div class="p-4 md:p-8">
+            <div class="mb-6">
+                <h1 class="text-3xl font-light text-gray-900">Advanced Test - WebRTC</h1>
+                <p class="text-gray-600 text-sm mt-1">Real-time camera monitoring with low-latency WebRTC streaming</p>
+            </div>
+
+            <!-- People Counter Section -->
+            <div class="mb-6">
+                <div class="people-counter">
+                    <div class="counter-content">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="counter-number" id="totalPeopleCount">
+                                    <span id="peopleCountNumber">0</span>
+                                    <span class="update-indicator"></span>
+                                </div>
+                                <div class="counter-label">Total People in Rooms</div>
+                            </div>
+                            <svg class="w-16 h-16 opacity-30" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"></path>
+                            </svg>
+                        </div>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-value" id="activeCamerasCount">0</span>
+                                <span class="stat-label">Active Cameras</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-value" id="totalTracksCount">0</span>
+                                <span class="stat-label">Total Tracks</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-value" id="avgFpsCount">0</span>
+                                <span class="stat-label">Avg FPS</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Camera Breakdown -->
+                <div class="camera-breakdown">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z"></path>
+                        </svg>
+                        People Per Camera
+                    </h3>
+                    <div id="cameraBreakdown">
+                        <div class="text-gray-400 text-sm text-center py-4">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Camera Grid -->
+            <div class="camera-grid" id="cameraGrid">
+                <!-- Loading placeholders -->
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="camera-card">
+                    <div class="video-container bg-gray-300 animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration for ULTRA-LOW LATENCY live streaming
+        const CONFIG = {
+            ICE_SERVERS: [
+                { urls: ['stun:stun.l.google.com:19302'] }
+            ],
+            STATS_INTERVAL: 1000,
+            RECONNECT_DELAY: 3000,
+            REQUEST_TIMEOUT: 3000,  // Reduced timeout for faster retries
+            FRAME_POLL_INTERVAL: 0,  // ZERO delay - poll continuously for smooth streaming
+            JPEG_QUALITY: 75,  // Lower = faster encoding = smoother stream
+            MAX_CONCURRENT_REQUESTS: 1,  // Per camera - sequential for smooth delivery
+            FRAME_CACHE_TTL: 0,  // NO cache - always fresh frames
+            // Adaptive quality tuning (lower for speed)
+            QUALITY_HIGH: 78,
+            QUALITY_MEDIUM: 75,
+            QUALITY_LOW: 70,
+            LATENCY_THRESHOLD_MEDIUM: 80,  // Switch to medium quality if latency > 80ms
+            LATENCY_THRESHOLD_LOW: 150,  // Switch to low quality if latency > 150ms
+            MIN_POLL_INTERVAL: 0,  // Minimum interval between polls (0 = continuous)
+            MAX_POLL_INTERVAL: 10  // Maximum interval for error recovery
+        };
+
+        // Global state
+        const state = {
+            cameras: {},
+            sessions: {},
+            peerConnections: {},
+            stats: {},
+            latency: {}  // Track network latency per camera for adaptive quality
+        };
+
+        // Utility: Get auth token
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        // Utility: Check authentication
+        function checkAuth() {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return token;
+        }
+
+        // Utility: Make fetch request with timeout and auth
+        async function fetchWithAuth(url, options = {}) {
+            const token = getToken();
+            const timeout = options.timeout || CONFIG.REQUEST_TIMEOUT;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    }
+                });
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        }
+
+        // Initialize camera UI
+        async function initializeCameras() {
+            try {
+                if (!checkAuth()) return;
+
+                // First: Initialize cameras from config
+                console.log('Initializing cameras from config...');
+                const initResponse = await fetchWithAuth('/api/ip-cameras/initialize', {
+                    method: 'POST'
+                });
+                
+                if (!initResponse.ok) {
+                    throw new Error(`Failed to initialize cameras: ${initResponse.status}`);
+                }
+                
+                const initData = await initResponse.json();
+                console.log('Initialization result:', initData);
+
+                // Second: Get camera list from backend
+                const response = await fetchWithAuth('/api/ip-cameras/status');
+                const data = await response.json();
+
+                if (data.cameras) {
+                    state.cameras = data.cameras;
+                    renderCameraCards();
+                    console.log(`Loaded ${Object.keys(data.cameras).length} cameras`);
+                }
+            } catch (error) {
+                console.error('Camera initialization error:', error);
+            }
+        }
+
+        // Render camera cards
+        function renderCameraCards() {
+            const grid = document.getElementById('cameraGrid');
+            grid.innerHTML = '';
+
+            Object.entries(state.cameras).forEach(([name, camera]) => {
+                const card = document.createElement('div');
+                card.className = 'camera-card';
+                card.id = `card-${name}`;
+                card.innerHTML = `
+                    <div class="video-container relative">
+                        <!-- Image will be injected here by pollFrames() -->
+                        <div class="status-badge">
+                            <span class="dot dot-loading" id="status-dot-${name}"></span>
+                            <span id="status-text-${name}">Disconnected</span>
+                        </div>
+                        <div class="stats-display" id="stats-${name}">
+                            <span id="bitrate-${name}">-- fps</span>
+                            <span id="resolution-${name}">-- p</span>
+                        </div>
+                    </div>
+                    <div class="camera-info">
+                        <h3 class="camera-name">${name}</h3>
+                        <p class="camera-status" id="info-${name}">Initializing...</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Connect camera via simple HTTP frame polling
+        async function connectCamera(cameraName) {
+            try {
+                updateCameraStatus(cameraName, 'connecting', 'Connecting...');
+
+                // Start frame polling loop
+                await pollFrames(cameraName);
+
+            } catch (error) {
+                console.error(`Error connecting ${cameraName}:`, error);
+                updateCameraStatus(cameraName, 'error', 'Connection failed');
+                // Attempt reconnect
+                setTimeout(() => connectCamera(cameraName), CONFIG.RECONNECT_DELAY);
+            }
+        }
+
+        // Poll frames from camera with ZERO delay for ultra-low latency live streaming
+        async function pollFrames(cameraName) {
+            const videoContainer = document.querySelector(`#card-${cameraName} .video-container`);
+            if (!videoContainer) return;
+
+            // Create or get the image element with hardware acceleration hints
+            let frameImg = videoContainer.querySelector('img[data-camera-frame]');
+            if (!frameImg) {
+                frameImg = document.createElement('img');
+                frameImg.setAttribute('data-camera-frame', 'true');
+                frameImg.style.display = 'none';
+                frameImg.style.backfaceVisibility = 'hidden';  // GPU acceleration
+                frameImg.style.willChange = 'contents';  // Hint for browser optimization
+                frameImg.style.imageRendering = 'crisp-edges';  // Faster rendering
+                videoContainer.appendChild(frameImg);
+            }
+
+            let frameCount = 0;
+            let startTime = Date.now();
+            let requestInProgress = false;
+            let lastFrameTime = 0;
+            let currentQuality = CONFIG.QUALITY_MEDIUM;  // Start with medium for speed
+            let latencySum = 0;
+            let latencySamples = 0;
+            let consecutiveErrors = 0;
+            const MAX_ERRORS = 5;
+            let pendingRequest = null;  // Track pending request to cancel old ones
+
+            const pollLoop = async () => {
+                // Skip if already have a pending request (avoid overwhelming server)
+                if (requestInProgress) {
+                    // Schedule next poll IMMEDIATELY for maximum frame rate
+                    setTimeout(pollLoop, 0);
+                    return;
+                }
+
+                requestInProgress = true;
+                const requestStartTime = Date.now();
+
+                try {
+                    // Fast fetch with reduced timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+
+                    const response = await fetch(
+                        `/api/ip-cameras/frame/${cameraName}?quality=${currentQuality}`,
+                        {
+                            signal: controller.signal,
+                            headers: {
+                                'Authorization': `Bearer ${getToken()}`,
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',  // Force fresh data
+                                'Pragma': 'no-cache',
+                                'Expires': '0'
+                            }
+                        }
+                    );
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    consecutiveErrors = 0;  // Reset error counter on success
+
+                    // Calculate latency for adaptive quality
+                    const latency = Date.now() - requestStartTime;
+                    latencySum += latency;
+                    latencySamples++;
+
+                    // Adaptive quality adjustment (every 30 samples)
+                    if (latencySamples >= 30) {
+                        const avgLatency = latencySum / latencySamples;
+                        
+                        if (avgLatency > CONFIG.LATENCY_THRESHOLD_LOW) {
+                            currentQuality = CONFIG.QUALITY_LOW;  // Reduce quality for slow networks
+                        } else if (avgLatency > CONFIG.LATENCY_THRESHOLD_MEDIUM) {
+                            currentQuality = CONFIG.QUALITY_MEDIUM;
+                        } else {
+                            currentQuality = CONFIG.QUALITY_HIGH;  // Good network, use high quality
+                        }
+                        
+                        latencySum = 0;
+                        latencySamples = 0;
+                    }
+
+                    // Update frame if available (ALWAYS update for live streaming)
+                    if (data.frame) {
+                        const now = Date.now();
+                        
+                        // Direct frame update (no deduplication for live streaming)
+                        frameImg.src = data.frame;
+                        frameImg.style.display = 'block';
+                        lastFrameTime = now;
+                        frameCount++;
+                        
+                        // Calculate end-to-end latency
+                        if (data.debug) {
+                            const networkLatency = latency - (data.debug.encode_time_ms || 0);
+                            const frameAge = data.debug.frame_age_ms || 0;
+                            const totalLatency = frameAge + latency;
+                            
+                            // Log significant delays (> 100ms end-to-end)
+                            if (totalLatency > 100) {
+                                console.warn(`[${cameraName}] HIGH LATENCY: Frame age=${frameAge.toFixed(1)}ms + Network=${networkLatency.toFixed(1)}ms + Encode=${data.debug.encode_time_ms}ms = ${totalLatency.toFixed(1)}ms total`);
+                            }
+                        }
+
+                        // Update stats every 30 frames
+                        if (frameCount % 30 === 0) {
+                            const elapsed = (now - startTime) / 1000;
+                            const fps = Math.round(frameCount / elapsed);
+                            updateStatsDisplay(cameraName, fps);
+                        }
+
+                        // Update status on first frame
+                        if (frameCount === 1) {
+                            updateCameraStatus(cameraName, 'connected', 'Live');
+                        }
+                    }
+                } catch (error) {
+                    consecutiveErrors++;
+                    
+                    if (consecutiveErrors >= MAX_ERRORS) {
+                        console.error(`Multiple errors for ${cameraName}, attempting reconnect...`);
+                        updateCameraStatus(cameraName, 'error', 'Connection lost - reconnecting...');
+                        consecutiveErrors = 0;
+                        // Brief pause before reconnect
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                } finally {
+                    requestInProgress = false;
+                    
+                    // ZERO delay polling for maximum FPS and minimum latency
+                    // Browser will naturally throttle to optimal rate
+                    setTimeout(pollLoop, CONFIG.MIN_POLL_INTERVAL);
+                }
+            };
+
+            // Start polling immediately
+            pollLoop();
+        }
+
+        // Quick stats display update
+        function updateStatsDisplay(cameraName, fps) {
+            const fpsEl = document.getElementById(`bitrate-${cameraName}`);
+            if (fpsEl) {
+                fpsEl.textContent = `${fps} fps`;
+            }
+        }
+
+        // Update stats display
+        function updateStats(cameraName, width, height) {
+            if (!state.stats[cameraName]) {
+                state.stats[cameraName] = {
+                    startTime: Date.now(),
+                    frames: 0
+                };
+            }
+
+            state.stats[cameraName].frames++;
+
+            const elapsed = (Date.now() - state.stats[cameraName].startTime) / 1000;
+            const fps = Math.round(state.stats[cameraName].frames / elapsed);
+
+            const bitrateEl = document.getElementById(`bitrate-${cameraName}`);
+            const resolutionEl = document.getElementById(`resolution-${cameraName}`);
+
+            if (bitrateEl) {
+                bitrateEl.textContent = `${fps} fps`;
+            }
+            if (resolutionEl && height) {
+                resolutionEl.textContent = `${height}p`;
+            }
+        }
+
+        // Update camera status display
+        function updateCameraStatus(cameraName, status, message) {
+            const statusDot = document.getElementById(`status-dot-${cameraName}`);
+            const statusText = document.getElementById(`status-text-${cameraName}`);
+            const info = document.getElementById(`info-${cameraName}`);
+
+            const statusClass = {
+                'connected': 'dot-connected',
+                'connecting': 'dot-loading',
+                'error': 'dot-error'
+            };
+
+            if (statusDot) {
+                statusDot.className = `dot ${statusClass[status] || 'dot-error'}`;
+                statusText.textContent = message;
+            }
+
+            if (info) {
+                const iconMap = {
+                    'connected': '✓',
+                    'connecting': '⏳',
+                    'error': '✕'
+                };
+                info.textContent = `${iconMap[status] || ''} ${message}`;
+            }
+
+            console.log(`${cameraName}: ${status} - ${message}`);
+        }
+
+        // Disconnect camera
+        async function disconnectCamera(cameraName) {
+            try {
+                const video = document.getElementById(`video-${cameraName}`);
+                if (video) {
+                    video.srcObject = null;
+                }
+                updateCameraStatus(cameraName, 'error', 'Disconnected');
+            } catch (error) {
+                console.error(`Error disconnecting ${cameraName}:`, error);
+            }
+        }
+
+        // Connect all cameras
+        async function connectAllCameras() {
+            for (const cameraName of Object.keys(state.cameras)) {
+                await connectCamera(cameraName);
+                // Stagger connections slightly
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        // Disconnect all cameras
+        async function disconnectAllCameras() {
+            for (const cameraName of Object.keys(state.cameras)) {
+                await disconnectCamera(cameraName);
+            }
+        }
+
+        // Update people count display
+        async function updatePeopleCount() {
+            try {
+                const response = await fetchWithAuth('/api/tracking/people-count');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch people count');
+                }
+                
+                const data = await response.json();
+                
+                // Update total count with animation
+                const countElement = document.getElementById('peopleCountNumber');
+                const currentCount = parseInt(countElement.textContent) || 0;
+                const newCount = data.total_unique_people || 0;
+                
+                if (currentCount !== newCount) {
+                    animateCount(countElement, currentCount, newCount);
+                }
+                
+                // Update camera breakdown
+                updateCameraBreakdown(data.people_per_camera || {});
+                
+            } catch (error) {
+                console.error('Error fetching people count:', error);
+            }
+        }
+
+        // Update tracking statistics
+        async function updateTrackingStats() {
+            try {
+                const response = await fetchWithAuth('/api/tracking/stats');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch tracking stats');
+                }
+                
+                const data = await response.json();
+                
+                // Update active cameras
+                const activeCameras = Object.keys(data.people_per_camera || {}).length;
+                document.getElementById('activeCamerasCount').textContent = activeCameras;
+                
+                // Update total tracks
+                document.getElementById('totalTracksCount').textContent = data.active_tracks || 0;
+                
+                // Update average FPS
+                const cameraFps = data.camera_fps || {};
+                const fpsValues = Object.values(cameraFps);
+                const avgFps = fpsValues.length > 0 
+                    ? Math.round(fpsValues.reduce((a, b) => a + b, 0) / fpsValues.length)
+                    : 0;
+                document.getElementById('avgFpsCount').textContent = avgFps;
+                
+            } catch (error) {
+                console.error('Error fetching tracking stats:', error);
+            }
+        }
+
+        // Animate count change
+        function animateCount(element, from, to) {
+            const duration = 500; // ms
+            const steps = 20;
+            const stepValue = (to - from) / steps;
+            const stepDuration = duration / steps;
+            let current = from;
+            let step = 0;
+            
+            const interval = setInterval(() => {
+                step++;
+                current += stepValue;
+                
+                if (step >= steps) {
+                    element.textContent = to;
+                    clearInterval(interval);
+                } else {
+                    element.textContent = Math.round(current);
+                }
+            }, stepDuration);
+        }
+
+        // Update camera breakdown
+        function updateCameraBreakdown(peoplePerCamera) {
+            const breakdownDiv = document.getElementById('cameraBreakdown');
+            
+            if (Object.keys(peoplePerCamera).length === 0) {
+                breakdownDiv.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">No people detected</div>';
+                return;
+            }
+            
+            let html = '';
+            for (const [cameraName, count] of Object.entries(peoplePerCamera)) {
+                html += `
+                    <div class="camera-breakdown-item">
+                        <div class="camera-breakdown-name">
+                            <svg class="people-icon" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"></path>
+                            </svg>
+                            ${formatCameraName(cameraName)}
+                        </div>
+                        <div class="camera-breakdown-count">${count}</div>
+                    </div>
+                `;
+            }
+            
+            breakdownDiv.innerHTML = html;
+        }
+
+        // Format camera name for display
+        function formatCameraName(name) {
+            return name
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+
+        // Start people count polling
+        function startPeopleCountPolling() {
+            // Update immediately
+            updatePeopleCount();
+            updateTrackingStats();
+            
+            // Update every 1 second
+            setInterval(() => {
+                updatePeopleCount();
+                updateTrackingStats();
+            }, 1000);
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            disconnectAllCameras().catch(console.error);
+        });
+
+        // Initialize on page load - auto-connect all cameras
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkAuth()) {
+                initializeCameras().then(() => {
+                    // Auto-connect all cameras immediately
+                    connectAllCameras();
+                    
+                    // Start people count polling
+                    startPeopleCountPolling();
+                });
+            }
+        });
+    </script>
+</body>
+</html>

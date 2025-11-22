@@ -1,0 +1,30 @@
+# BoT-SORT tracker configuration with ReID enabled for multi-camera tracking
+# Based on Ultralytics best practices for cross-camera people counting
+
+# Tracker type (do not change)
+tracker_type: botsort
+
+# Detection thresholds
+track_high_thresh: 0.5    # High confidence threshold for first association
+track_low_thresh: 0.1     # Low confidence threshold for second association
+new_track_thresh: 0.6     # Threshold to create new track
+
+# Track management
+track_buffer: 30          # Number of frames to keep lost tracks (1 second at 30fps)
+match_thresh: 0.8         # Matching threshold for IoU distance
+
+# Re-identification (ReID) - CRITICAL for multi-camera tracking
+with_reid: true           # Enable ReID for cross-camera matching
+proximity_thresh: 0.5     # Minimum IoU for valid ReID match
+appearance_thresh: 0.25   # Minimum appearance similarity for ReID
+
+# ReID model configuration
+model: auto               # Use YOLO native features (fast, minimal overhead)
+                          # Alternative: yolo11n-cls.pt for better embeddings
+
+# Global motion compensation
+gmc_method: sparseOptFlow # sparseOptFlow, ecc, orb, sift, or None
+                          # sparseOptFlow is good for static cameras
+
+# Score fusion
+fuse_score: true          # Fuse confidence scores with IoU distances

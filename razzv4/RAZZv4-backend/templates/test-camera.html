@@ -58,7 +58,7 @@
         </div>
         
         <div class="mt-4 text-sm text-gray-400">
-            <p><strong>Server:</strong> https://aqlinks.com/rtsp/stream</p>
+            <p><strong>Server:</strong> https://aqlinks.com/webrtc/stream</p>
             <p><strong>Connection:</strong> WebRTC over HTTPS</p>
             <p><strong>ICE Servers:</strong> STUN (Google)</p>
         </div>
@@ -162,7 +162,7 @@
                 formData.append('url', rtspUrl);
                 formData.append('sdp64', sdp64);
                 
-                const response = await fetch('https://aqlinks.com/rtsp/stream', {
+                const response = await fetch('https://aqlinks.com/webrtc/stream', {
                     method: 'POST',
                     body: formData
                 });

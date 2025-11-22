@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Webcam - Face Recognition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body class="bg-white text-gray-900 font-sans">
+    {% include 'components/sidebar.html' %}
+
+    <div class="lg:ml-64">
+        <!-- Mobile Header -->
+        <div class="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+            <button onclick="openMobileSidebar()" class="p-2 rounded-lg hover:bg-gray-100">
+                <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <h1 class="text-lg font-semibold text-gray-900">Test Recognition</h1>
+            <div class="w-6"></div>
+        </div>
+        
+        <!-- Main Content -->
+        <main class="p-4 lg:p-6">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <!-- Header -->
+                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <h2 class="text-2xl font-light text-gray-900 mb-2">🧪 Test Face Recognition</h2>
+                    <p class="text-sm text-gray-600">Test your multi-angle face recognition in real-time</p>
+                </div>
+                
+                <!-- Live Feed -->
+                <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 class="text-lg font-light text-gray-900 mb-4">Live Feed</h3>
+                    
+                    <div id="videoContainer" class="bg-gray-900 rounded-lg overflow-hidden w-full mb-4">
+                        <video id="webcamVideo" class="w-full h-auto object-contain hidden" autoplay playsinline muted></video>
+                        <canvas id="webcamCanvas" class="w-full h-auto object-contain hidden"></canvas>
+                        <div id="webcamPlaceholder" class="flex items-center justify-center h-64 text-gray-400">
+                            <div class="text-center">
+                                <p class="text-sm">Click "Start Camera" to begin testing</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button id="startCamera" onclick="startWebcam()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                            Start Camera & Auto-Test (2 FPS)
+                        </button>
+                        <button id="stopCamera" onclick="stopWebcam()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg hidden">
+                            Stop Camera
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Recognition Results -->
+                <div id="recognitionResults" class="bg-white border border-gray-200 rounded-lg p-6 hidden">
+                    <h3 class="text-lg font-light text-gray-900 mb-4">Recognition Results</h3>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return token;
+        }
+        
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+        
+        checkAuth();
+        
+        let stream = null;
+        let videoElement = document.getElementById('webcamVideo');
+        let canvasElement = document.getElementById('webcamCanvas');
+        let placeholderElement = document.getElementById('webcamPlaceholder');
+        let recognitionInterval = null;
+        let isProcessing = false;
+        
+        async function startWebcam() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+                });
+                
+                videoElement.srcObject = stream;
+                videoElement.classList.remove('hidden');
+                placeholderElement.classList.add('hidden');
+                
+                document.getElementById('startCamera').classList.add('hidden');
+                document.getElementById('stopCamera').classList.remove('hidden');
+                
+                // Start automatic recognition at 2 FPS
+                startAutoRecognition();
+                
+            } catch (error) {
+                alert('Camera access denied: ' + error.message);
+            }
+        }
+        
+        function stopWebcam() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            // Stop automatic recognition
+            stopAutoRecognition();
+            
+            videoElement.classList.add('hidden');
+            placeholderElement.classList.remove('hidden');
+            
+            document.getElementById('startCamera').classList.remove('hidden');
+            document.getElementById('stopCamera').classList.add('hidden');
+        }
+        
+        function startAutoRecognition() {
+            // Run at 2 FPS (every 500ms)
+            recognitionInterval = setInterval(() => {
+                if (!isProcessing) {
+                    testRecognition();
+                }
+            }, 500);
+        }
+        
+        function stopAutoRecognition() {
+            if (recognitionInterval) {
+                clearInterval(recognitionInterval);
+                recognitionInterval = null;
+            }
+        }
+        
+        async function testRecognition() {
+            if (!stream) {
+                return;
+            }
+            
+            if (isProcessing) {
+                return; // Skip if already processing
+            }
+            
+            isProcessing = true;
+            
+            // Capture frame
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            const ctx = canvasElement.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0);
+            
+            const imageData = canvasElement.toDataURL('image/jpeg', 0.95);
+            
+            // Show loading
+            const resultsDiv = document.getElementById('recognitionResults');
+            const contentDiv = document.getElementById('resultsContent');
+            resultsDiv.classList.remove('hidden');
+            
+            try {
+                const response = await fetch('/api/test-face-recognition', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+                
+                const result = await response.json();
+                
+                // Display results
+                if (result.faces && result.faces.length > 0) {
+                    let html = '<div class="space-y-4">';
+                    
+                    result.faces.forEach((face, index) => {
+                        const statusColor = face.person_name && face.person_name !== 'Unknown' ? 'text-green-600' : 'text-orange-600';
+                        const statusIcon = face.person_name && face.person_name !== 'Unknown' ? '✅' : '❓';
+                        
+                        html += `
+                            <div class="border border-gray-200 rounded-lg p-4 bg-white">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="text-xl font-bold ${statusColor}">${statusIcon} ${face.person_name || 'Unknown Person'}</div>
+                                    ${face.match_confidence ? `<div class="text-sm ${statusColor} font-semibold">${(face.match_confidence * 100).toFixed(1)}%</div>` : ''}
+                                </div>
+                                ${face.person_id ? `<div class="text-xs text-gray-500">ID: ${face.person_id}</div>` : ''}
+                                <div class="text-xs text-gray-400 mt-2">
+                                    ${result.processing_time || ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                    contentDiv.innerHTML = html;
+                } else if (result.message) {
+                    // Show API message if available
+                    contentDiv.innerHTML = `<div class="text-center py-4 text-gray-600">👤 ${result.message}</div>`;
+                } else {
+                    contentDiv.innerHTML = '<div class="text-center py-4 text-gray-600">👤 No faces detected</div>';
+                }
+                
+            } catch (error) {
+                contentDiv.innerHTML = `<div class="text-center py-4 text-red-600">Error: ${error.message}</div>`;
+            } finally {
+                isProcessing = false;
+            }
+        }
+    </script>
+</body>
+</html>

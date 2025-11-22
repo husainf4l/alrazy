@@ -15,6 +15,7 @@ from routes import visualization
 from database import engine, Base, SessionLocal
 from services.people_detection import PeopleDetector, RTSPPeopleCounter
 from services.cross_camera_tracking import GlobalPersonTracker
+from gpu_optimization import enable_gpu_optimization, print_gpu_status
 
 # Import ALL models before creating tables (order matters for foreign keys)
 from models.room import Room
@@ -27,10 +28,15 @@ global_person_tracker = None
 
 
 def start_detection_service():
-    """Initialize and start people detection service"""
+    """Initialize and start people detection service with GPU acceleration"""
     global people_detector, people_counter, global_person_tracker
     
     print("🚀 Initializing people detection service...")
+    
+    # Enable GPU optimizations
+    print("🎮 Enabling GPU acceleration...")
+    enable_gpu_optimization()
+    print_gpu_status()
     
     # Initialize cross-camera tracker first
     global_person_tracker = GlobalPersonTracker(
@@ -38,12 +44,14 @@ def start_detection_service():
         time_window=5  # 5 seconds for matching across cameras (increased for person movement)
     )
     
-    # Initialize detector with YOLO11m + ByteTrack + DeepSORT + Global Tracker
+    # Initialize detector with YOLO11m (ONNX) + YuNet Face + ByteTrack + DeepSORT + Global Tracker
+    # GPU Acceleration enabled for RTX 4070
     people_detector = PeopleDetector(
-        model_size="yolo11m.pt", 
+        model_size="yolo11m.onnx", 
         conf_threshold=0.5,
         bytetrack_threshold=0.6,  # Threshold for ByteTrack confidence
-        global_tracker=global_person_tracker  # Pass global tracker
+        global_tracker=global_person_tracker,  # Pass global tracker
+        use_gpu=True  # Enable GPU acceleration
     )
     
     # Initialize counter with 30 FPS processing (ByteTrack requirement)

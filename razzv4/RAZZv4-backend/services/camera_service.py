@@ -39,42 +39,12 @@ class CameraProcessor:
         self.last_person_count = 0
         self.last_update_time = datetime.now()
         self.last_annotated_frame = None  # Store latest annotated frame
-        self.last_tracks = {}  # Store tracking data for WebSocket (bbox, id, confidence)
-        self.fps = 0  # Current FPS
-        self.frame_count = 0  # Total frames processed
-        self.frame_skip = 1  # Process frames at reduced rate
+        self.frame_skip = 1  # Process EVERY frame (30 FPS like brinksv2)
         self.frame_counter = 0
         self.last_process_time = 0
-        self.last_yolo_time = 0  # Last YOLO detection time
-        self.last_deepsort_time = 0  # Last DeepSORT time
-        self.yolo_interval = 1.0 / 15  # 15 FPS for YOLO detection
-        self.bytetrack_interval = 1.0 / 30  # 30 FPS for ByteTrack updates
-        self.deepsort_interval = 1.0 / 2  # 2 FPS for DeepSORT ReID
-        self.last_detections = None  # Cache last YOLO detections for ByteTrack interpolation
-        
-        # Camera position in room (world coordinates) - loaded from database
-        self.camera_position = None  # (x, y) in meters
-        self.room_id = None
-        self._load_camera_position()
+        self.frame_interval = 1.0 / 30  # 30 FPS target (same as brinksv2)
         
         logger.info(f"CameraProcessor initialized for camera {camera_id} with tracking={'enabled' if use_tracking else 'disabled'}")
-    
-    def _load_camera_position(self):
-        """Load camera position from database"""
-        db = self.db_session_factory()
-        try:
-            camera = db.query(Camera).filter(Camera.id == self.camera_id).first()
-            if camera:
-                self.room_id = camera.vault_room_id
-                if camera.position_x is not None and camera.position_y is not None:
-                    self.camera_position = (camera.position_x, camera.position_y)
-                    logger.info(f"Camera {self.camera_id} position: {self.camera_position} in room {self.room_id}")
-                else:
-                    logger.warning(f"Camera {self.camera_id} has no position set")
-        except Exception as e:
-            logger.error(f"Failed to load camera position: {e}")
-        finally:
-            db.close()
         
     def start(self):
         """Start processing this camera in a background thread"""
@@ -102,10 +72,6 @@ class CameraProcessor:
             # Release existing capture if any
             if self.capture:
                 self.capture.release()
-            
-            # Suppress FFmpeg warnings (harmless H.264 decoding messages from network packet loss)
-            import os
-            os.environ['OPENCV_FFMPEG_LOGLEVEL'] = '-8'  # Quiet mode
             
             # Open RTSP stream
             self.capture = cv2.VideoCapture(self.rtsp_url)
@@ -155,56 +121,29 @@ class CameraProcessor:
                     # Reset failure counter on successful frame
                     consecutive_failures = 0
                     
+                    # Time-based throttling (30 FPS target - EXACTLY like brinksv2)
                     current_time = time.time()
-                    
-                    # ByteTrack runs at 30 FPS (every frame)
-                    if current_time - self.last_process_time < self.bytetrack_interval:
+                    if current_time - self.last_process_time < self.frame_interval:
                         continue  # Skip if not enough time has passed
                     
-                    # Process frame with YOLO + Tracking
+                    # Process frame with YOLO + Tracking (BRINKSv2 style: all in one call)
                     if self.use_tracking and self.tracking_service:
-                        # Determine if we should run YOLO (15 FPS) or just ByteTrack (30 FPS)
-                        run_yolo = (current_time - self.last_yolo_time >= self.yolo_interval)
+                        # Track people (does YOLO detection + ByteTrack + DeepSORT internally)
+                        tracking_result = self.tracking_service.track_people(
+                            self.camera_id, frame, self.yolo_service
+                        )
                         
-                        if run_yolo:
-                            # Run YOLO detection at 15 FPS
-                            person_count, detections_list, detections_sv = self.yolo_service.detect_people(frame)
-                            self.last_detections = detections_sv
-                            self.last_yolo_time = current_time
-                        else:
-                            # Use cached detections for ByteTrack interpolation at 30 FPS
-                            detections_sv = self.last_detections
+                        # Draw tracking boxes on frame (BRINKSv2: frame first, camera_id second)
+                        annotated_frame = self.tracking_service.draw_tracks(frame, self.camera_id)
                         
-                        # Track people (ByteTrack runs at 30 FPS)
-                        if detections_sv is not None and len(detections_sv) > 0:
-                            tracking_result = self.tracking_service.track_people(
-                                self.camera_id, frame, detections_sv
-                            )
-                            
-                            # Store tracking data for WebSocket
-                            camera_state = self.tracking_service.camera_tracks.get(self.camera_id, {})
-                            self.last_tracks = camera_state.get('tracks', {})
-                            
-                            # Draw tracking boxes on frame
-                            annotated_frame = self.tracking_service.draw_tracks(frame, self.camera_id)
-                            
-                            # Store the annotated frame for streaming
-                            self.last_annotated_frame = annotated_frame
-                            person_count = tracking_result['people_count']
-                            
-                            # Update FPS counter
-                            self.frame_count += 1
-                            if self.frame_count % 30 == 0:  # Update FPS every 30 frames
-                                elapsed = current_time - self.last_process_time if self.last_process_time > 0 else 1
-                                self.fps = 30 / elapsed if elapsed > 0 else 0
-                            
-                            # Update last process time
-                            self.last_process_time = current_time
-                            
-                            logger.debug(f"Camera {self.camera_id}: {person_count} people tracked (YOLO: {run_yolo})")
-                        else:
-                            # No detections yet, continue to next frame
-                            continue
+                        # Store the annotated frame for streaming
+                        self.last_annotated_frame = annotated_frame
+                        person_count = tracking_result['people_count']
+                        
+                        # Update last process time
+                        self.last_process_time = current_time
+                        
+                        logger.debug(f"Camera {self.camera_id}: {person_count} people tracked")
                     else:
                         # Fallback to simple counting (with annotation for visualization)
                         person_count, detections_list, detections_sv = self.yolo_service.detect_people(frame)
@@ -288,24 +227,8 @@ class CameraService:
             cameras = db.query(Camera).filter(Camera.is_active == True).all()
             logger.info(f"Starting {len(cameras)} active cameras")
             
-            # Load zones for each room with cameras
-            rooms_loaded = set()
-            for camera in cameras:
-                if camera.vault_room_id and camera.vault_room_id not in rooms_loaded:
-                    # Load room zones from database
-                    room = db.query(VaultRoom).filter(VaultRoom.id == camera.vault_room_id).first()
-                    if room and room.room_layout:
-                        try:
-                            self.tracking_service.load_room_zones(room.id, room.room_layout)
-                            logger.info(f"✅ Loaded zones for room {room.id} ({room.name})")
-                            rooms_loaded.add(room.id)
-                        except Exception as e:
-                            logger.error(f"Failed to load zones for room {room.id}: {e}")
-            
-            # Start camera processors
             for camera in cameras:
                 self.start_camera(camera.id, camera.rtsp_url)
-                
         finally:
             db.close()
     
@@ -331,40 +254,3 @@ class CameraService:
             "last_person_count": 0,
             "last_update": None
         }
-    
-    def get_room_zone_statistics(self, room_id: int) -> dict:
-        """
-        Get zone-based statistics for a room
-        
-        Args:
-            room_id: Room identifier
-            
-        Returns:
-            Dictionary with zone statistics including people counts per zone
-        """
-        try:
-            zone_stats = self.tracking_service.get_zone_statistics(room_id)
-            
-            # Calculate total people in room (avoiding double counting in overlaps)
-            total_people = len(set(
-                person_id 
-                for zone_data in zone_stats.values() 
-                for person_id in zone_data.get('people_ids', [])
-            ))
-            
-            return {
-                'room_id': room_id,
-                'total_people': total_people,
-                'zones': zone_stats,
-                'timestamp': datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error getting zone statistics for room {room_id}: {e}")
-            return {
-                'room_id': room_id,
-                'total_people': 0,
-                'zones': {},
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
-
